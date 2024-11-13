@@ -1,0 +1,50 @@
+{
+    "1": {
+        "locker_id": 1,
+        "price": 50.0
+    },
+    "2": {
+        "locker_id": 2,
+        "price": 47.0
+    },
+    "3": {
+        "locker_id": 3,
+        "price": 45.0
+    },
+    "4": {
+        "locker_id": 4,
+        "price": 5.0
+    },
+    "5": {
+        "locker_id": 5,
+        "price": 23.0
+    },
+    "6": {
+        "locker_id": 6,
+        "price": 88.0
+    },
+    "7": {
+        "locker_id": 7,
+        "price": 5.0
+    },
+    "8": {
+        "locker_id": 8,
+        "price": 25.0
+    },
+    "9": {
+        "locker_id": 9,
+        "price": 99.0
+    },
+    "10": {
+        "locker_id": 10,
+        "price": 70.0
+    },
+    "11": {
+        "locker_id": 11,
+        "price": 89.0
+    },
+    "12": {
+        "locker_id": 12,
+        "price": 5.0
+    }
+}
