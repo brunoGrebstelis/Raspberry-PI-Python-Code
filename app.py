@@ -5,6 +5,7 @@ import time
 import os
 from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow
 from utils import load_locker_data, save_locker_data, send_command
+from spi_handler import SPIHandler
 
 class VendingMachineApp(tk.Tk):
     def __init__(self):
@@ -20,6 +21,20 @@ class VendingMachineApp(tk.Tk):
 
         # Load button images
         self.button_images = [tk.PhotoImage(file=os.path.join("img", f"button{i}.png")) for i in range(1, 13)]
+
+        
+        # SPIHandler initialization with error handling
+        try:
+            self.spi_handler = SPIHandler(bus=0, device=0, speed_hz=500000)
+            self.spi_enabled = True
+            print("SPI initialized successfully.")
+        except (ImportError, FileNotFoundError, AttributeError) as e:
+            self.spi_handler = None
+            self.spi_enabled = False
+            print(f"SPI not available on this system: {e}")
+
+        self.protocol("WM_DELETE_WINDOW", self.on_close)  # Ensure SPI is closed on exit
+
 
         # Setup buttons
         self.create_locker_buttons()
@@ -78,6 +93,10 @@ class VendingMachineApp(tk.Tk):
     def unlock_locker(self, locker_id):
         send_command(f"UNLOCK:{locker_id}")
         messagebox.showinfo("Locker Unlocked", f"Locker {locker_id} has been unlocked.")
+        if self.spi_enabled:
+            self.spi_handler.set_led_color(1, 255, 0, 0)  # Example SPI command
+        else:
+            print("SPI is disabled, skipping SPI commands.")
 
     def on_button_press(self, event):
         self.press_time = time.time()
@@ -119,16 +138,41 @@ class VendingMachineApp(tk.Tk):
 
 
     def change_price_callback(self):
+        """Callback for changing the price of a selected locker."""
         locker_id = self.selected_locker
         if locker_id is not None:
-            PriceEntryWindow(self, locker_id, self.save_price)
+            # Open the price entry window
+            PriceEntryWindow(self, locker_id, self.save_price_and_update_spi)
+        else:
+            messagebox.showwarning("No Locker Selected", "Please select a locker to change its price.")
 
-    def save_price(self, new_price):
-        locker_id = str(self.selected_locker)
-        self.locker_data[locker_id]["price"] = new_price
+
+
+    def save_price_and_update_spi(self, locker_id, new_price):
+        """
+        Save the new price for a locker and update STM32 via SPI.
+        :param locker_id: Locker number to update.
+        :param new_price: New price in euros.
+        """
+        # Save the price to locker_data
+        self.locker_data[str(locker_id)]["price"] = new_price
         save_locker_data(self.locker_data)
-        messagebox.showinfo("Price Updated", f"Price for locker {locker_id} set to {new_price:.2f}€")
+
+        # Send the new price to STM32
+        if self.spi_enabled:
+            self.spi_handler.set_price(locker_number=locker_id, price=new_price)
+        else:
+            print("SPI is disabled, skipping SPI commands.")
+
+        messagebox.showinfo("Price Updated", f"Price for Locker {locker_id} set to {new_price:.2f}€")
+
 
     def keyboard_listener(self, event):
         if event.keysym == 'Escape':
             self.quit()
+
+    def on_close(self):
+        """Handle application exit."""
+        self.spi_handler.close()  # Close the SPI connection
+        self.destroy()  # Close the main window
+
