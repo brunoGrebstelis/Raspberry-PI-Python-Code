@@ -57,6 +57,6 @@
     "12": {
         "locker_id": 12,
         "price": 5.0,
-        "status": true
+        "status": false
     }
 }
