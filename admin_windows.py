@@ -51,27 +51,49 @@ class PinEntryWindow(Toplevel):
 
 # Admin Options Window Class
 class AdminOptionsWindow(Toplevel):
-    def __init__(self, master, locker_id, unlock_callback, price_callback):
+    def __init__(self, master, locker_id, unlock_callback, price_callback, locker_data, buttons, save_callback):
         super().__init__(master)
+        self.locker_id = locker_id
+        self.unlock_callback = unlock_callback
+        self.price_callback = price_callback
+        self.locker_data = locker_data
+        self.buttons = buttons
+        self.save_callback = save_callback
+
+
         self.title("Admin Options")
         self.geometry("300x200")
         self.configure(bg="#F0F0F0")
         
+        # Locker options label
         tk.Label(self, text=f"Locker {locker_id} Options", font=("Arial", 16)).pack(pady=10)
 
-        unlock_button = tk.Button(self, text="Unlock Locker", font=("Arial", 14), command=lambda: self.on_unlock(unlock_callback))
+        # Unlock button
+        unlock_button = tk.Button(self, text="Unlock Locker", font=("Arial", 14), command=self.on_unlock)
         unlock_button.pack(pady=5)
 
-        change_price_button = tk.Button(self, text="Change Price", font=("Arial", 14), command=lambda: self.on_change_price(price_callback))
+        # Change price button
+        change_price_button = tk.Button(self, text="Change Price", font=("Arial", 14), command=self.on_change_price)
         change_price_button.pack(pady=5)
 
-    def on_unlock(self, unlock_callback):
-        unlock_callback()
+    def on_unlock(self):
+        """Handle locker unlocking and mark it as available."""
+        # Call the unlock callback to perform physical unlocking
+        self.unlock_callback(self.locker_id)
+
+        # Mark locker as available and reset button GUI
+        self.locker_data[str(self.locker_id)]["status"] = True
+        self.buttons[self.locker_id].config(bg="#C3C3C3", state="normal")  # Reset button
+        self.save_callback(self.locker_data)
+
+        # Close the admin options window
         self.destroy()
 
-    def on_change_price(self, price_callback):
-        price_callback()
+    def on_change_price(self):
+        """Call the change price callback."""
+        self.price_callback()
         self.destroy()
+
 
 # Price Entry Window Class
 class PriceEntryWindow(Toplevel):

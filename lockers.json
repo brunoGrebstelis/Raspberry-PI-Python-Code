@@ -1,50 +1,62 @@
 {
     "1": {
         "locker_id": 1,
-        "price": 50.0
+        "price": 20.0,
+        "status": true
     },
     "2": {
         "locker_id": 2,
-        "price": 47.0
+        "price": 47.0,
+        "status": true
     },
     "3": {
         "locker_id": 3,
-        "price": 45.0
+        "price": 45.0,
+        "status": true
     },
     "4": {
         "locker_id": 4,
-        "price": 5.0
+        "price": 5.0,
+        "status": true
     },
     "5": {
         "locker_id": 5,
-        "price": 23.0
+        "price": 23.0,
+        "status": true
     },
     "6": {
         "locker_id": 6,
-        "price": 88.0
+        "price": 88.0,
+        "status": true
     },
     "7": {
         "locker_id": 7,
-        "price": 5.0
+        "price": 99.0,
+        "status": true
     },
     "8": {
         "locker_id": 8,
-        "price": 25.0
+        "price": 25.0,
+        "status": true
     },
     "9": {
         "locker_id": 9,
-        "price": 99.0
+        "price": 99.0,
+        "status": true
     },
     "10": {
         "locker_id": 10,
-        "price": 70.0
+        "price": 70.0,
+        "status": true
     },
     "11": {
         "locker_id": 11,
-        "price": 89.0
+        "price": 89.0,
+        "status": false
     },
     "12": {
         "locker_id": 12,
-        "price": 5.0
+        "price": 5.0,
+        "status": true
     }
 }

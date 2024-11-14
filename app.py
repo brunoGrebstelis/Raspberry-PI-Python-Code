@@ -49,7 +49,9 @@ class VendingMachineApp(tk.Tk):
 
         self.buttons = {}
         for i, spec in enumerate(button_specs, start=1):
-            button = tk.Button(self, image=self.button_images[i-1], text=str(i), font=("Arial", 18, "bold"), bg="#C3C3C3", borderwidth=0, fg="black", command=lambda i=i: self.select_locker(i))
+            locker_id = str(i)
+            status = self.locker_data[locker_id]["status"]
+            button = tk.Button(self, image=self.button_images[i-1], text=str(i), font=("Arial", 18, "bold"), bg="#C3C3C3", state="disabled" if not status else "normal", borderwidth=0, fg="black", command=lambda i=i: self.select_locker(i))
             button.place(x=spec["pos"][0], y=spec["pos"][1], width=spec["size"][0], height=spec["size"][1])
             button.bind("<ButtonPress-1>", self.on_button_press)
             button.bind("<ButtonRelease-1>", self.on_button_release)
@@ -68,6 +70,9 @@ class VendingMachineApp(tk.Tk):
         payment_successful = True  # Replace with actual payment handling
         if payment_successful:
             locker_id = self.selected_locker
+            self.locker_data[str(locker_id)]["status"] = False
+            self.buttons[locker_id].config(state="disabled")
+            save_locker_data(self.locker_data)
             self.unlock_locker(locker_id)
 
     def unlock_locker(self, locker_id):
@@ -79,7 +84,7 @@ class VendingMachineApp(tk.Tk):
 
     def on_button_release(self, event):
         hold_duration = time.time() - self.press_time
-        if hold_duration >= 3:
+        if hold_duration >= 2:
             locker_id = int(event.widget["text"])
             self.prompt_admin_options(locker_id)
 
@@ -93,12 +98,25 @@ class VendingMachineApp(tk.Tk):
         PinEntryWindow(self, pin_callback)
 
     def show_admin_options(self, locker_id):
-        AdminOptionsWindow(self, locker_id, self.unlock_locker_callback, self.change_price_callback)
+        """Show admin options for a specific locker."""
+        AdminOptionsWindow(
+            self,
+            locker_id=locker_id,
+            unlock_callback=self.unlock_locker_callback,
+            price_callback=self.change_price_callback,
+            locker_data=self.locker_data,
+            buttons=self.buttons,
+            save_callback=save_locker_data  # Pass the save function as a callback
+        )
 
-    def unlock_locker_callback(self):
-        if self.selected_locker is not None:
-            send_command(f"UNLOCK:{self.selected_locker}")
-            messagebox.showinfo("Locker Unlocked", f"Locker {self.selected_locker} has been unlocked.")
+
+
+    def unlock_locker_callback(self, locker_id):
+        """Handle locker unlocking and reset its availability."""
+        send_command(f"UNLOCK:{locker_id}")  # Send unlock command to STM32
+        messagebox.showinfo("Locker Unlocked", f"Locker {locker_id} has been unlocked.")
+
+
 
     def change_price_callback(self):
         locker_id = self.selected_locker
