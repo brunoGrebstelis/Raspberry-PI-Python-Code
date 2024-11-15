@@ -1,6 +1,7 @@
 # Try to import spidev for Raspberry Pi SPI communication
 try:
     import spidev  # Import the SPI library for Raspberry Pi
+    SpiDev = spidev.SpiDev  # Assign SpiDev to the spidev class
 except ImportError:
     # Mock implementation of SpiDev for development/testing on Windows
     class SpiDev:
