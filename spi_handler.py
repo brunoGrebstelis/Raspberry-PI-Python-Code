@@ -15,9 +15,12 @@ except ImportError:
         def close(self):
             print("Mock SPI: Closed connection")
 
+import time
+import RPi.GPIO as GPIO
+
 # Define the SPIHandler class
 class SPIHandler:
-    def __init__(self, bus=0, device=0, speed_hz=500000):
+    def __init__(self, bus=0, device=0, speed_hz=1600000):
         """
         Initialize the SPI communication.
         :param bus: SPI bus (default is 0).
@@ -28,6 +31,9 @@ class SPIHandler:
         self.spi.open(bus, device)
         self.spi.max_speed_hz = speed_hz
         self.spi.mode = 0  # SPI Mode 0 (adjust if necessary)
+        
+
+
 
     def send_command(self, command, data):
         """
@@ -35,8 +41,18 @@ class SPIHandler:
         :param command: Command identifier (1 byte).
         :param data: List of data bytes to send.
         """
+        
+        #GPIO.setmode(GPIO.BCM)  # Use BCM pin numbering
+        #CS_PIN = 8  # Update with the correct CS pin (e.g., GPIO 8)
+        #GPIO.setup(CS_PIN, GPIO.OUT)  # Set the CS pin as an output
+        #self.CS_PIN = CS_PIN  # Save the CS pin for later use
+        
         packet = [command] + data  # Combine command and data into a single list
+        #GPIO.output(CS_PIN, GPIO.LOW)  # Pull CS LOW
         self.spi.xfer2(packet)  # Transfer the packet over SPI
+        #GPIO.output(CS_PIN, GPIO.HIGH)  # Pull CS HIGH
+        time.sleep(0.05)  # 50 ms delay
+        
 
     def set_led_color(self, locker_number, red, green, blue):
         """
@@ -58,7 +74,7 @@ class SPIHandler:
         """
         command = 0x02  # Command for PRICE
         price_in_cents = int(price * 100)  # Convert price to cents
-        data = [locker_number, (price_in_cents >> 8) & 0xFF, price_in_cents & 0xFF]  # Split price into 2 bytes
+        data = [locker_number, (price_in_cents >> 8) & 0xFF, price_in_cents & 0xFF, 0x00]  # Split price into 2 bytes
         self.send_command(command, data)
 
     def close(self):

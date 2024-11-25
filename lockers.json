@@ -36,7 +36,7 @@
     },
     "8": {
         "locker_id": 8,
-        "price": 25.0,
+        "price": 36.0,
         "status": true
     },
     "9": {
@@ -46,13 +46,13 @@
     },
     "10": {
         "locker_id": 10,
-        "price": 70.0,
-        "status": true
+        "price": 80.0,
+        "status": false
     },
     "11": {
         "locker_id": 11,
         "price": 89.0,
-        "status": true
+        "status": false
     },
     "12": {
         "locker_id": 12,

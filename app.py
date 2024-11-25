@@ -94,7 +94,7 @@ class VendingMachineApp(tk.Tk):
         send_command(f"UNLOCK:{locker_id}")
         messagebox.showinfo("Locker Unlocked", f"Locker {locker_id} has been unlocked.")
         if self.spi_enabled:
-            self.spi_handler.set_led_color(1, 255, 0, 0)  # Example SPI command
+            self.spi_handler.set_led_color(locker_id, 255, 0, 0)  # Example SPI command
         else:
             print("SPI is disabled, skipping SPI commands.")
 
