@@ -173,6 +173,10 @@ class VendingMachineApp(tk.Tk):
 
     def on_close(self):
         """Handle application exit."""
-        self.spi_handler.close()  # Close the SPI connection
-        self.destroy()  # Close the main window
+        if hasattr(self, 'spi_handler') and self.spi_handler:
+            try:
+                self.spi_handler.close()
+            except Exception as e:
+                print(f"Error during SPIHandler cleanup: {e}")
+        self.destroy()
 
