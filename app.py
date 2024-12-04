@@ -28,6 +28,7 @@ class VendingMachineApp(tk.Tk):
             self.spi_handler = SPIHandler(bus=0, device=0, speed_hz=500000)
             self.spi_enabled = True
             print("SPI initialized successfully.")
+            self.transfer_prices_to_stm32()
         except (ImportError, FileNotFoundError, AttributeError) as e:
             self.spi_handler = None
             self.spi_enabled = False
@@ -89,6 +90,8 @@ class VendingMachineApp(tk.Tk):
             self.buttons[locker_id].config(state="disabled")
             save_locker_data(self.locker_data)
             self.unlock_locker(locker_id)
+            self.selected_locker = None
+            self.buttons[locker_id].config(bg="#C3C3C3")
 
     def unlock_locker(self, locker_id):
         send_command(f"UNLOCK:{locker_id}")
@@ -165,6 +168,22 @@ class VendingMachineApp(tk.Tk):
             print("SPI is disabled, skipping SPI commands.")
 
         messagebox.showinfo("Price Updated", f"Price for Locker {locker_id} set to {new_price:.2f}€")
+
+
+
+    def transfer_prices_to_stm32(self):
+        """
+        Transfer price information from JSON to STM32 via SPI.
+        """
+        if self.spi_enabled:
+            for locker_id, data in self.locker_data.items():
+                price = data["price"]
+                locker_number = int(locker_id)
+                self.spi_handler.set_price(locker_number, price)
+                print(f"Price for Locker {locker_number} set to {price:.2f}€")
+        else:
+            print("SPI is disabled, skipping price transfer.")
+
 
 
     def keyboard_listener(self, event):
