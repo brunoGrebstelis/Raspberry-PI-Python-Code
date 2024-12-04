@@ -1,12 +1,12 @@
 {
     "1": {
         "locker_id": 1,
-        "price": 20.0,
+        "price": 22.0,
         "status": true
     },
     "2": {
         "locker_id": 2,
-        "price": 47.0,
+        "price": 33.0,
         "status": true
     },
     "3": {
