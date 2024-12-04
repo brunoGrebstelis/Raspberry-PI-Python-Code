@@ -41,7 +41,7 @@ class VendingMachineApp(tk.Tk):
         self.create_locker_buttons()
 
         # Create PAY button
-        self.pay_button = tk.Button(self, image=self.pay_image, command=self.process_payment, borderwidth=0, bg="#C3C3C3", highlightthickness=0)
+        self.pay_button = tk.Button(self, image=self.pay_image, command=self.process_payment, borderwidth=0, bg="#C3C3C3", activebackground="#C3C3C3", highlightthickness=0)
         self.pay_button.place(x=140, y=385, width=520, height=70)
 
         # Keyboard listener for Escape key
@@ -67,7 +67,7 @@ class VendingMachineApp(tk.Tk):
         for i, spec in enumerate(button_specs, start=1):
             locker_id = str(i)
             status = self.locker_data[locker_id]["status"]
-            button = tk.Button(self, image=self.button_images[i-1], text=str(i), font=("Arial", 18, "bold"), bg="#C3C3C3", state="disabled" if not status else "normal", borderwidth=0, fg="black", highlightthickness=0, command=lambda i=i: self.select_locker(i))
+            button = tk.Button(self, image=self.button_images[i-1], text=str(i), font=("Arial", 18, "bold"), bg="#C3C3C3", activebackground="#C3C3C3", state="disabled" if not status else "normal", borderwidth=0, fg="black", highlightthickness=0, command=lambda i=i: self.select_locker(i))
             button.place(x=spec["pos"][0], y=spec["pos"][1], width=spec["size"][0], height=spec["size"][1])
             button.bind("<ButtonPress-1>", self.on_button_press)
             button.bind("<ButtonRelease-1>", self.on_button_release)
@@ -75,9 +75,9 @@ class VendingMachineApp(tk.Tk):
 
     def select_locker(self, locker_id):
         if self.selected_locker is not None:
-            self.buttons[self.selected_locker].config(bg="#C3C3C3")
+            self.buttons[self.selected_locker].config(bg="#C3C3C3", activebackground="#C3C3C3")
         self.selected_locker = locker_id
-        self.buttons[locker_id].config(bg="green")
+        self.buttons[locker_id].config(bg="green", activebackground="green")
 
     def process_payment(self):
         if self.selected_locker is None:
@@ -91,7 +91,7 @@ class VendingMachineApp(tk.Tk):
             save_locker_data(self.locker_data)
             self.unlock_locker(locker_id)
             self.selected_locker = None
-            self.buttons[locker_id].config(bg="#C3C3C3")
+            self.buttons[locker_id].config(bg="#C3C3C3", activebackground="#C3C3C3")
 
     def unlock_locker(self, locker_id):
         send_command(f"UNLOCK:{locker_id}")
@@ -181,9 +181,10 @@ class VendingMachineApp(tk.Tk):
                 locker_number = int(locker_id)
                 self.spi_handler.set_price(locker_number, price)
                 print(f"Price for Locker {locker_number} set to {price:.2f}€")
+                time.sleep(0.05)
         else:
             print("SPI is disabled, skipping price transfer.")
-
+            
 
 
     def keyboard_listener(self, event):
