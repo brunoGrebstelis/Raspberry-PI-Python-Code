@@ -10,7 +10,7 @@ from utils import generate_summary_from_logs_ru
 
 
 if __name__ == "__main__":
-    #upload_file_to_drive('logs/logs_2024_12.csv')
+    upload_file_to_drive('logs/logs_2024_12.csv')
     send_email(
         subject="Test",
         body=generate_summary_from_logs("logs/logs_2024_12.csv"),

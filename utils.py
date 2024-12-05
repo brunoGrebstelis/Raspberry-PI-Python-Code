@@ -164,7 +164,7 @@ def is_file_expired(file_path, expiration_time):
 
 def upload_file_to_drive(file_path, folder_id=None):
     """Uploads a file to Google Drive."""
-    creds = load_credentials('drive_token.json')
+    creds = load_credentials('credentials/drive_token.json')
     if not creds:
         raise Exception("Google Drive credentials not found. Please authenticate.")
 
@@ -192,7 +192,7 @@ def send_email(subject, body, recipient_email, attachment_file=None):
     :param recipient_email: Recipient's email address.
     :param attachment_file: Path to the file to attach (optional).
     """
-    creds = load_credentials('gmail_token.json')
+    creds = load_credentials('credentials/gmail_token.json')
     if not creds:
         raise Exception("Gmail credentials not found. Please authenticate.")
 
