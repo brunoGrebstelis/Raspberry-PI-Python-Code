@@ -4,7 +4,7 @@ from tkinter import messagebox
 import time
 import os
 from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow
-from utils import load_locker_data, save_locker_data, send_command
+from utils import load_locker_data, save_locker_data, send_command, log_event
 from spi_handler import SPIHandler
 
 class VendingMachineApp(tk.Tk):
@@ -86,12 +86,15 @@ class VendingMachineApp(tk.Tk):
         payment_successful = True  # Replace with actual payment handling
         if payment_successful:
             locker_id = self.selected_locker
+            price = self.locker_data[str(locker_id)]["price"]
             self.locker_data[str(locker_id)]["status"] = False
             self.buttons[locker_id].config(state="disabled")
             save_locker_data(self.locker_data)
+            log_event(locker_id, price)
             self.unlock_locker(locker_id)
             self.selected_locker = None
             self.buttons[locker_id].config(bg="#C3C3C3", activebackground="#C3C3C3")
+
 
     def unlock_locker(self, locker_id):
         send_command(f"UNLOCK:{locker_id}")
