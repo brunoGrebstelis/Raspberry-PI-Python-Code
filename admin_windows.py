@@ -75,6 +75,7 @@ class AdminOptionsWindow(Toplevel):
         # Change price button
         change_price_button = tk.Button(self, text="Change Price", font=("Arial", 14), command=self.on_change_price)
         change_price_button.pack(pady=5)
+        
 
     def on_unlock(self):
         """Handle locker unlocking and mark it as available."""
@@ -102,8 +103,11 @@ class PriceEntryWindow(Toplevel):
         self.title(f"Set Price for Locker {locker_id}")
         self.geometry("300x400")
         self.configure(bg="#F0F0F0")
-        
+
+        self.locker_id = locker_id
+        self.save_price_callback = save_price_callback
         self.entered_price = StringVar()
+
         entry_display = tk.Entry(self, textvariable=self.entered_price, font=("Arial", 24), justify="center")
         entry_display.grid(row=0, column=0, columnspan=3, pady=10)
 
@@ -116,7 +120,8 @@ class PriceEntryWindow(Toplevel):
 
         for (text, row, col) in buttons:
             if text == "Enter":
-                button = tk.Button(self, text=text, font=("Arial", 18), command=lambda: self.on_enter(save_price_callback))
+                # Call self.on_enter directly
+                button = tk.Button(self, text=text, font=("Arial", 18), command=self.on_enter)
             elif text == "Clear":
                 button = tk.Button(self, text=text, font=("Arial", 18), command=self.on_clear)
             else:
@@ -135,10 +140,17 @@ class PriceEntryWindow(Toplevel):
     def on_clear(self):
         self.entered_price.set("")
 
-    def on_enter(self, save_price_callback):
+    def on_enter(self):
+        """Save the entered price and call the callback."""
         try:
+            # Validate the price input
             price = float(self.entered_price.get())
-            save_price_callback(price)
+
+            # Call the callback with locker_id and the new price
+            self.save_price_callback(self.locker_id, price)
+
+            # Close the window after successfully saving the price
             self.destroy()
         except ValueError:
-            messagebox.showerror("Invalid Price", "Please enter a valid price.")
+            # Show an error if the entered price is not a valid float
+            messagebox.showerror("Invalid Input", "Please enter a valid price.")
