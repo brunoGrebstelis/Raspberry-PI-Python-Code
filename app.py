@@ -6,6 +6,7 @@ import os
 from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow
 from utils import load_locker_data, save_locker_data, send_command, log_event
 from spi_handler import SPIHandler
+from scheduler import Scheduler
 
 class VendingMachineApp(tk.Tk):
     def __init__(self):
@@ -15,6 +16,10 @@ class VendingMachineApp(tk.Tk):
         self.configure(bg="#C3C3C3")
         self.selected_locker = None
         self.locker_data = load_locker_data()
+
+        # Initialize the scheduler
+        self.scheduler = Scheduler()
+        self.scheduler.start()
 
         # Load images (assuming they're in an 'img' folder)
         self.pay_image = tk.PhotoImage(file=os.path.join("img", "icon3.png"))
@@ -196,10 +201,15 @@ class VendingMachineApp(tk.Tk):
 
     def on_close(self):
         """Handle application exit."""
+        if self.scheduler:
+            self.scheduler.stop()
+            print("Scheduler stopped.")
+
         if hasattr(self, 'spi_handler') and self.spi_handler:
             try:
                 self.spi_handler.close()
             except Exception as e:
                 print(f"Error during SPIHandler cleanup: {e}")
+                
         self.destroy()
 

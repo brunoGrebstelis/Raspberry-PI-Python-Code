@@ -174,6 +174,11 @@ def upload_file_to_drive(file_path, folder_id=None):
     #delete_all_files_from_drive(creds, service)
     delete_file_from_drive_by_name(creds, service, os.path.basename(file_path))
 
+    # Delete a file that is two days old
+    two_days_ago = datetime.now() - timedelta(days=2)
+    old_file_name = f"logs_{two_days_ago.strftime('%Y_%m_%d')}.csv"  
+    delete_file_from_drive_by_name(creds, service, old_file_name)
+
     # Prepare file metadata
     file_metadata = {'name': file_path.split('/')[-1]}  # Extract file name from file_path
     if folder_id:
