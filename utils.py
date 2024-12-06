@@ -171,7 +171,8 @@ def upload_file_to_drive(file_path, folder_id=None):
     # Initialize Drive API client
     service = build('drive', 'v3', credentials=creds)
 
-    delete_all_files_from_drive(creds, service)
+    #delete_all_files_from_drive(creds, service)
+    delete_file_from_drive_by_name(creds, service, os.path.basename(file_path))
 
     # Prepare file metadata
     file_metadata = {'name': file_path.split('/')[-1]}  # Extract file name from file_path
@@ -219,6 +220,46 @@ def delete_all_files_from_drive(creds, service):
                 print(f"Failed to delete file: {file_name} (ID: {file_id}), Error: {e}")
 
         print("All files have been deleted from Google Drive.")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+def delete_file_from_drive_by_name(creds, service, file_name):
+    """
+    Deletes a file from Google Drive by its name.
+    :param file_name: The name of the file to delete.
+    """
+    # Load credentials from the token file
+    #creds = load_credentials('credentials/token.json')
+    #if not creds:
+    #    raise Exception("Google Drive credentials not found. Please authenticate.")
+
+    # Initialize Google Drive API client
+    #service = build('drive', 'v3', credentials=creds)
+
+    try:
+        # Search for the file by name
+        results = service.files().list(
+            q=f"name='{file_name}'",  # Query to find files matching the name
+            fields="files(id, name)"
+        ).execute()
+
+        files = results.get('files', [])
+
+        if not files:
+            print(f"No file named '{file_name}' was found on Google Drive.")
+            return
+
+        # Iterate through all matching files (there might be duplicates)
+        for file in files:
+            file_id = file['id']
+            file_name = file['name']
+            try:
+                service.files().delete(fileId=file_id).execute()
+                print(f"Deleted: {file_name} (ID: {file_id})")
+            except Exception as e:
+                print(f"Failed to delete file: {file_name} (ID: {file_id}), Error: {e}")
 
     except Exception as e:
         print(f"An error occurred: {e}")
