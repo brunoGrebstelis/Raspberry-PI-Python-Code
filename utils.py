@@ -171,6 +171,8 @@ def upload_file_to_drive(file_path, folder_id=None):
     # Initialize Drive API client
     service = build('drive', 'v3', credentials=creds)
 
+    delete_all_files_from_drive(creds, service)
+
     # Prepare file metadata
     file_metadata = {'name': file_path.split('/')[-1]}  # Extract file name from file_path
     if folder_id:
@@ -182,6 +184,45 @@ def upload_file_to_drive(file_path, folder_id=None):
     # Upload the file
     uploaded_file = service.files().create(body=file_metadata, media_body=media).execute()
     print(f"File uploaded: {uploaded_file['name']} (ID: {uploaded_file['id']})")
+
+
+
+def delete_all_files_from_drive(creds, service):
+    """
+    Deletes all files from the authenticated Google Drive account.
+    """
+    # Load credentials from the token file
+    #creds = load_credentials('credentials/token.json')
+    #if not creds:
+    #    raise Exception("Google Drive credentials not found. Please authenticate.")
+
+    # Initialize Google Drive API client
+    #service = build('drive', 'v3', credentials=creds)
+
+    try:
+        # List all files in the user's Drive
+        results = service.files().list(fields="files(id, name)").execute()
+        files = results.get('files', [])
+
+        if not files:
+            print("No files found in your Google Drive.")
+            return
+
+        # Iterate through each file and delete it
+        for file in files:
+            file_id = file['id']
+            file_name = file['name']
+            try:
+                service.files().delete(fileId=file_id).execute()
+                print(f"Deleted: {file_name} (ID: {file_id})")
+            except Exception as e:
+                print(f"Failed to delete file: {file_name} (ID: {file_id}), Error: {e}")
+
+        print("All files have been deleted from Google Drive.")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
 
  
 def send_email(subject, body, recipient_email, attachment_file=None):
