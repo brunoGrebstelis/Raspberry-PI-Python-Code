@@ -3,6 +3,7 @@ import time
 from threading import Thread
 from utils import upload_file_to_drive
 from utils import send_email
+from utils import send_email_all
 from utils import generate_summary_from_logs
 from utils import generate_summary_from_logs_lv
 from utils import generate_summary_from_logs_de
@@ -25,7 +26,10 @@ class Scheduler:
         # Schedule monthly email reports by checking daily at 10:00
         schedule.every().day.at("10:00").do(self.check_and_send_monthly_email_report)
 
-        # Additional tasks can be added here...
+        # Test
+        #schedule.every().hour.at(":15").do(self.hourly_drive_update)
+        schedule.every().hour.at(":40").do(self.send_monthly_email_report)
+
 
     def hourly_drive_update(self):
         """
@@ -73,7 +77,7 @@ class Scheduler:
         body = generate_summary_from_logs(log_file)
 
         try:
-            send_email(subject, body, "bgrebstelis@gmail.com", attachment_file=log_file)
+            send_email_all(subject, body, attachment_file=log_file)
             print(f"Monthly email report for {last_month} sent successfully.")
         except FileNotFoundError:
             print(f"No monthly log file found for {last_month}. Email report skipped.")

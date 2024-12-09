@@ -320,6 +320,72 @@ def send_email(subject, body, recipient_email, attachment_file=None):
 
 
 
+def send_email_all(subject, body, attachment_file=None):
+    """
+    Send an email to multiple recipients by reading addresses from a .txt file.
+    :param subject: Subject of the email.
+    :param body: Body of the email.
+    :param attachment_file: Path to the file to attach (optional).
+    :param email_file_path: Path to the .txt file containing email addresses.
+    """
+    email_file_path="email_adresses.txt"
+    creds = load_credentials('credentials/gmail_token.json')
+    if not creds:
+        raise Exception("Gmail credentials not found. Please authenticate.")
+
+    # Initialize Gmail API client
+    service = build('gmail', 'v1', credentials=creds)
+
+    # Read email addresses from the file
+    try:
+        with open(email_file_path, 'r') as email_file:
+            email_addresses = [line.strip().strip(';') for line in email_file.readlines()]
+    except FileNotFoundError:
+        print(f"Error: Email addresses file '{email_file_path}' not found.")
+        return
+
+    for recipient_email in email_addresses:
+        if not recipient_email:  # Skip empty lines
+            continue
+        try:
+            # Create the email message with MIMEMultipart
+            message = MIMEMultipart()
+            message['to'] = recipient_email
+            message['subject'] = subject
+
+            # Add email body
+            message.attach(MIMEText(body, 'plain'))
+
+            # Attach file if provided
+            if attachment_file:
+                try:
+                    with open(attachment_file, 'rb') as f:
+                        mime_base = MIMEBase('application', 'octet-stream')
+                        mime_base.set_payload(f.read())
+                        encoders.encode_base64(mime_base)
+                        mime_base.add_header(
+                            'Content-Disposition',
+                            f'attachment; filename={attachment_file.split("/")[-1]}'
+                        )
+                        message.attach(mime_base)
+                except FileNotFoundError:
+                    print(f"Error: Attachment file '{attachment_file}' not found.")
+                    continue
+
+            # Encode the message
+            raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+            # Send the email
+            send_request = {'raw': raw_message}
+            sent_message = service.users().messages().send(userId="me", body=send_request).execute()
+            print(f"Email sent to {recipient_email}: {sent_message['id']}")
+
+        except Exception as e:
+            print(f"Failed to send email to {recipient_email}: {e}")
+
+
+
+
 def generate_summary_from_logs(file_path):
     """
     Generates a well-structured summary from the vending machine log file.
