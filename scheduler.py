@@ -5,6 +5,7 @@ from utils import upload_file_to_drive
 from utils import send_email
 from utils import send_email_all
 from utils import generate_summary_from_logs
+from utils import generate_summary_from_logs_year
 from utils import generate_summary_from_logs_lv
 from utils import generate_summary_from_logs_de
 from utils import generate_summary_from_logs_ru
@@ -25,6 +26,10 @@ class Scheduler:
 
         # Schedule monthly email reports by checking daily at 10:00
         schedule.every().day.at("10:00").do(self.check_and_send_monthly_email_report)
+
+        # Schedule yearly email reports by checking yearly at 00:00
+        schedule.every().day.at("00:00").do(self.check_and_send_yearly_report)
+
 
         # Test
         #schedule.every().hour.at(":15").do(self.hourly_drive_update)
@@ -70,6 +75,9 @@ class Scheduler:
         Task to send the monthly email report.
         """
         from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+        #last_month_date = datetime.now() - relativedelta(months=1)
+        #last_month = last_month_date.strftime('%Y_%m')
         last_month = datetime.now().strftime('%Y_%m')
         log_file = f"logs/logs_{last_month}.csv"
 
@@ -85,6 +93,34 @@ class Scheduler:
             print(f"Failed to send monthly email report. Error: {e}")
 
 
+
+    def send_yearly_email_report(self):
+        """
+        Task to send the yearly email report.
+        """
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+
+        # Calculate the last year
+        last_year_date = datetime.now() - relativedelta(years=1)
+        last_year = last_year_date.strftime('%Y')
+        log_file = f"logs/logs_{last_year}.csv"
+
+        # Prepare the email details
+        subject = f"Yearly Report for {last_year}"
+        body = generate_summary_from_logs_year(log_file)
+
+        try:
+            send_email_all(subject, body, attachment_file=log_file)
+            print(f"Yearly email report for {last_year} sent successfully.")
+        except FileNotFoundError:
+            print(f"No yearly log file found for {last_year}. Email report skipped.")
+        except Exception as e:
+            print(f"Failed to send yearly email report. Error: {e}")      
+
+
+
+
     def check_and_send_monthly_email_report(self):
         """
         Check if today is the first day of the month and send the monthly email report.
@@ -94,6 +130,17 @@ class Scheduler:
 
         if today.day == 1:  # If it's the first day of the month
             self.send_monthly_email_report()
+
+    def check_and_send_yearly_report(self):
+        """
+        Check if today is January 1st and send the yearly report.
+        """
+        from datetime import datetime
+
+        # Check if today is January 1st
+        if datetime.now().strftime('%m-%d') == '01-01':
+            self.send_yearly_email_report()
+
 
 
     def manage_old_logs(self):

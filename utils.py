@@ -450,6 +450,72 @@ def generate_summary_from_logs(file_path):
         return f"An error occurred: {e}"
     
 
+
+def generate_summary_from_logs_year(file_path):
+    """
+    Generates a well-structured summary from the vending machine log file.
+    :param file_path: Path to the log file (CSV).
+    :return: A formatted summary text.
+    """
+    try:
+        # Check if the file exists
+        with open(file_path, 'r') as f:
+            reader = csv.DictReader(f)
+
+            # Initialize counters
+            total_earnings = 0
+            total_purchases = 0
+            daily_sales = Counter()
+            locker_sales = Counter()
+
+            # Process each row in the CSV
+            for row in reader:
+                try:
+                    date = row["Date"]
+                    locker_id = row["Locker ID"]
+                    price = float(row["Price"])
+                    
+                    total_earnings += price
+                    total_purchases += 1
+                    daily_sales[date] += 1
+                    locker_sales[locker_id] += 1
+                except (KeyError, ValueError) as e:
+                    print(f"Skipping invalid row: {row}, Error: {e}")
+
+        # Calculate top selling days
+        top_days = daily_sales.most_common(3)
+
+        # Calculate top selling lockers
+        top_lockers = locker_sales.most_common(3)
+
+        # Format the top selling days
+        best_selling_days = "\n".join(
+            [f"   - {day}: {count} sales" for day, count in top_days]
+        )
+
+        # Format the top selling lockers
+        best_selling_lockers = "\n".join(
+            [f"   - Locker {locker_id}: {count} sales" for locker_id, count in top_lockers]
+        )
+
+        # Generate the summary text
+        summary = (
+            f"Happy New Year\n"
+            f"This years's summary:\n"
+            f"---------------------\n"
+            f"Total earnings: €{total_earnings:.2f}\n"
+            f"Total purchases: {total_purchases}\n"
+            f"\nBest selling days:\n{best_selling_days}\n"
+            f"\nBest selling lockers:\n{best_selling_lockers}\n"
+        )
+        return summary
+
+    except FileNotFoundError:
+        return f"Error: The file '{file_path}' does not exist."
+    except Exception as e:
+        return f"An error occurred: {e}"
+    
+
 def generate_summary_from_logs_lv(file_path):
     """
     Generates a well-structured summary from the vending machine log file in Latvian.
