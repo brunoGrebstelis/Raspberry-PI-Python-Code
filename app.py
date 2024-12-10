@@ -1,6 +1,6 @@
 # app.py
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, TclError
 import time
 import os
 from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow
@@ -20,6 +20,9 @@ class VendingMachineApp(tk.Tk):
         # Initialize the scheduler
         self.scheduler = Scheduler()
         self.scheduler.start()
+
+        # Boolean to enable or disable PIN check on exit
+        self.require_exit_pin = True  # Set to False to disable PIN verification on exit
 
         # Load images (assuming they're in an 'img' folder)
         self.pay_image = tk.PhotoImage(file=os.path.join("img", "icon3.png"))
@@ -199,17 +202,51 @@ class VendingMachineApp(tk.Tk):
         if event.keysym == 'Escape':
             self.quit()
 
+
     def on_close(self):
-        """Handle application exit."""
+        """Handle application exit with optional PIN verification."""
+        if self.require_exit_pin:
+            if hasattr(self, '_exit_pin_window') and self._exit_pin_window is not None:
+                return
+
+            def pin_callback(pin):
+                if pin == "4671":  # Replace with your actual PIN
+                    self.cleanup_and_exit()
+                else:
+                    messagebox.showerror("Incorrect PIN", "The PIN entered is incorrect. Application will not close.")
+
+                # Clean up the PinEntryWindow reference
+                self._exit_pin_window = None
+
+            # Create the PIN entry window and track it
+            self._exit_pin_window = PinEntryWindow(self, pin_callback)
+        else:
+            self.cleanup_and_exit()
+
+    def cleanup_and_exit(self):
+        """Perform cleanup and exit the application."""
+        # Safely destroy any open PinEntryWindow
+        if hasattr(self, '_exit_pin_window') and self._exit_pin_window is not None:
+            try:
+                self._exit_pin_window.destroy()
+            except TclError as e:
+                print(f"Error destroying PinEntryWindow: {e}")
+            finally:
+                self._exit_pin_window = None
+
+        # Stop the scheduler
         if self.scheduler:
             self.scheduler.stop()
             print("Scheduler stopped.")
 
+        # Close the SPI handler
         if hasattr(self, 'spi_handler') and self.spi_handler:
             try:
                 self.spi_handler.close()
             except Exception as e:
                 print(f"Error during SPIHandler cleanup: {e}")
-                
+
+        # Destroy the application window
         self.destroy()
+
 
