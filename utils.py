@@ -15,7 +15,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 import base64
 
-
+from admin_windows import InformationWindow
 
 
 LOG_FOLDER = "logs"
@@ -704,4 +704,58 @@ def generate_summary_from_logs_ru(file_path):
     except Exception as e:
         return f"Произошла ошибка: {e}"
 
+
+def interpret_and_notify(data):
+
+    if not isinstance(data, (bytes, bytearray)) or len(data) != 5:
+        print("Invalid input: Expected a 5-byte sequence.")
+
+    command = data[0]
+    byte2 = data[1]
+    byte3 = data[2]
+
+    subject = None
+    body = None
+
+    if command == 0xF1:  # Problems with lockers
+        locker_id = byte2
+        subject = "Problems with Locker"
+        if byte3 == 50:
+            body = f"Locker {locker_id}: Has been opened for an hour."
+        elif byte3 == 100:
+            body = f"Locker {locker_id}: Was opened for an hour, now closed."
+        elif byte3 == 150:
+            body = f"Locker {locker_id}: Jammed. Customer has been informed to call support."
+            InformationWindow.show()
+        else:
+            body = f"Locker {locker_id}: Unknown issue (code {byte3})."
+        send_email_all(subject, body)
+
+    elif command == 0xF2:  # Problems with I2C devices
+        locker_id = byte2
+        subject = "Problems with I2C Devices"
+        if byte3 == 50:
+            body = f"Locker {locker_id}: Issue with price tag display."
+        elif byte3 == 100:
+            body = f"Locker {locker_id}: Issue with LED stripe driver."
+        else:
+            body = f"Locker {locker_id}: Unknown issue (code {byte3})."
+        send_email_all(subject, body)
+
+    elif command == 0xF3:  # Problems in ventilation system
+        ventilation_object = byte2
+        subject = "Problems in Ventilation System"
+        if byte3 == 50:
+            body = f"Ventilation object {ventilation_object}: Fan problem detected."
+        elif byte3 == 100:
+            body = f"Ventilation object {ventilation_object}: Humidity/temperature sensor issue detected."
+        else:
+            body = f"Ventilation object {ventilation_object}: Unknown issue (code {byte3})."
+        send_email_all(subject, body)
+
+    else:
+        print("Unknown command (0x{command:02X}).")
+
+
+        
 

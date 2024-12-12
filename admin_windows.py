@@ -254,3 +254,60 @@ class PriceEntryWindow(Toplevel):
         if self.master and hasattr(self.master, '_exit_pin_window'):
             self.master._exit_pin_window = None  # Clear reference in the master app
         self.destroy()
+
+
+
+class InformationWindow(tk.Toplevel):
+    def __init__(self, master=None, timeout=60000):
+        super().__init__(master)
+        self.title("Information")
+        self.geometry("800x460")  # Full screen for the given resolution
+        self.configure(bg="#FFC0C0")  # Light red background to draw attention
+
+        # Message content
+        text_german = (
+            "Leider ist das Schließfach blockiert.\n"
+            "Für Rückerstattung oder Blumen kontaktieren Sie bitte:\n"
+            "Janis: +4915757165517\n"
+            "Aija: +4915782920110"
+        )
+        text_english = (
+            "Unfortunately, the locker is jammed.\n"
+            "To get a refund or flowers, please contact:\n"
+            "Janis: +4915757165517\n"
+            "Aija: +4915782920110"
+        )
+
+        # Labels for the German text (larger size, bold font)
+        label_german = tk.Label(
+            self, text=text_german, font=("Arial", 22, "bold"), bg="#FFC0C0", justify="center"
+        )
+        label_german.pack(pady=(40, 20))  # Add padding to create space between sections
+
+        # Divider between languages
+        separator = tk.Label(
+            self, text="--------------------------", font=("Arial", 16), bg="#FFC0C0", justify="center"
+        )
+        separator.pack()
+
+        # Labels for the English text
+        label_english = tk.Label(
+            self, text=text_english, font=("Arial", 18), bg="#FFC0C0", justify="center"
+        )
+        label_english.pack(pady=(20, 40))
+
+        # Handle the "X" button
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # Timeout to close the window
+        self.after(timeout, self.on_close)
+
+    def on_close(self):
+        """Destroy the window."""
+        self.destroy()
+
+    @staticmethod
+    def show(master=None):
+        """Static method to show the window from another class."""
+        window = InformationWindow(master)
+        window.grab_set()  # Prevent interaction with other windows

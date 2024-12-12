@@ -33,7 +33,7 @@ class Scheduler:
 
         # Test
         #schedule.every().hour.at(":15").do(self.hourly_drive_update)
-        schedule.every().hour.at(":40").do(self.send_monthly_email_report)
+        #schedule.every().hour.at(":40").do(self.send_monthly_email_report)
 
 
     def hourly_drive_update(self):
@@ -76,9 +76,9 @@ class Scheduler:
         """
         from datetime import datetime
         from dateutil.relativedelta import relativedelta
-        #last_month_date = datetime.now() - relativedelta(months=1)
-        #last_month = last_month_date.strftime('%Y_%m')
-        last_month = datetime.now().strftime('%Y_%m')
+        last_month_date = datetime.now() - relativedelta(months=1)
+        last_month = last_month_date.strftime('%Y_%m')
+        #last_month = datetime.now().strftime('%Y_%m')
         log_file = f"logs/logs_{last_month}.csv"
 
         subject = f"Monthly Report for {last_month}"
