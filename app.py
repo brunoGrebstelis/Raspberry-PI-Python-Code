@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import messagebox, TclError
 import time
 import os
-from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow
+from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow, RGBEntryWindow
 from utils import load_locker_data, save_locker_data, send_command, log_event
 from spi_handler import SPIHandler
 from scheduler import Scheduler
@@ -22,7 +22,7 @@ class VendingMachineApp(tk.Tk):
         self.scheduler.start()
 
         # Boolean to enable or disable PIN check on exit
-        self.require_exit_pin = True  # Set to False to disable PIN verification on exit
+        self.require_exit_pin = False  # Set to False to disable PIN verification on exit
 
         # Load images (assuming they're in an 'img' folder)
         self.pay_image = tk.PhotoImage(file=os.path.join("img", "icon3.png"))
@@ -36,6 +36,7 @@ class VendingMachineApp(tk.Tk):
             self.spi_handler = SPIHandler(bus=0, device=0, speed_hz=500000)
             self.spi_enabled = True
             print("SPI initialized successfully.")
+            self.transfer_rgb_to_stm32()
             self.transfer_prices_to_stm32()
         except (ImportError, FileNotFoundError, AttributeError) as e:
             self.spi_handler = None
@@ -106,11 +107,11 @@ class VendingMachineApp(tk.Tk):
 
     def unlock_locker(self, locker_id):
         send_command(f"UNLOCK:{locker_id}")
-        messagebox.showinfo("Locker Unlocked", f"Locker {locker_id} has been unlocked.")
         if self.spi_enabled:
-            self.spi_handler.set_led_color(locker_id, 255, 0, 0)  # Example SPI command
+            self.spi_handler.open_locker(locker_id)  # Example SPI command
         else:
             print("SPI is disabled, skipping SPI commands.")
+        messagebox.showinfo("Locker Unlocked", f"Locker {locker_id} has been unlocked.")
 
     def on_button_press(self, event):
         self.press_time = time.time()
@@ -135,20 +136,14 @@ class VendingMachineApp(tk.Tk):
         AdminOptionsWindow(
             self,
             locker_id=locker_id,
-            unlock_callback=self.unlock_locker_callback,
+            unlock_callback=self.unlock_locker,
             price_callback=self.change_price_callback,
             locker_data=self.locker_data,
             buttons=self.buttons,
-            save_callback=save_locker_data  # Pass the save function as a callback
+            save_callback=save_locker_data,  # Pass the save function as a callback
+            spi_handler=self.spi_handler,
+            close_program_callback = self.on_close
         )
-
-
-
-    def unlock_locker_callback(self, locker_id):
-        """Handle locker unlocking and reset its availability."""
-        send_command(f"UNLOCK:{locker_id}")  # Send unlock command to STM32
-        messagebox.showinfo("Locker Unlocked", f"Locker {locker_id} has been unlocked.")
-
 
 
     def change_price_callback(self):
@@ -195,7 +190,25 @@ class VendingMachineApp(tk.Tk):
                 time.sleep(0.05)
         else:
             print("SPI is disabled, skipping price transfer.")
-            
+
+
+
+    def transfer_rgb_to_stm32(self):
+        """
+        Transfer RGB color information from JSON to STM32 via SPI.
+        """
+        if self.spi_enabled:
+            for locker_id, data in self.locker_data.items():
+                red = data.get("red", 0)
+                green = data.get("green", 0)
+                blue = data.get("blue", 0)
+                locker_number = int(locker_id)
+                self.spi_handler.set_led_color(locker_number, red, green, blue)
+                print(f"LED color for Locker {locker_number} set to RGB({red}, {green}, {blue})")
+                time.sleep(0.05)
+        else:
+            print("SPI is disabled, skipping RGB transfer.")
+
 
 
     def keyboard_listener(self, event):

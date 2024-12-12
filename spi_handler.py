@@ -102,6 +102,9 @@ class SPIHandler:
     def set_led_color(self, locker_number, red, green, blue):
         self.send_command(0x01, [locker_number, red, green, blue])
 
+    def open_locker(self, locker_number):
+        self.send_command(0x03, [locker_number, 0xFF, 0xFF, 0xFF])
+
     def set_price(self, locker_number, price):
         price_in_cents = int(price * 100)
         self.send_command(0x02, [locker_number, (price_in_cents >> 8) & 0xFF, price_in_cents & 0xFF, 0x00])
