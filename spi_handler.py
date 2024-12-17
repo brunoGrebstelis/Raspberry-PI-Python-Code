@@ -106,7 +106,7 @@ class SPIHandler:
         self.send_command(0x03, [locker_number, 0xFF, 0xFF, 0xFF])
 
     def set_price(self, locker_number, price):
-        price_in_cents = int(price * 100)
+        price_in_cents = int(price)
         self.send_command(0x02, [locker_number, (price_in_cents >> 8) & 0xFF, price_in_cents & 0xFF, 0x00])
 
     def send_dummy_and_read(self):
