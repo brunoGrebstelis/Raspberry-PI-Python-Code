@@ -282,36 +282,7 @@ class VendingMachineApp(tk.Tk):
 
 
     def on_close(self):
-        """Handle application exit with optional PIN verification."""
-        if self.require_exit_pin:
-            if hasattr(self, '_exit_pin_window') and self._exit_pin_window is not None:
-                return
-
-            def pin_callback(pin):
-                if pin == "4671":  # Replace with your actual PIN
-                    self.cleanup_and_exit()
-                else:
-                    messagebox.showerror("Incorrect PIN", "The PIN entered is incorrect. Application will not close.")
-
-                # Clean up the PinEntryWindow reference
-                self._exit_pin_window = None
-
-            # Create the PIN entry window and track it
-            self._exit_pin_window = PinEntryWindow(self, pin_callback)
-        else:
-            self.cleanup_and_exit()
-
-    def cleanup_and_exit(self):
         """Perform cleanup and exit the application."""
-        # Safely destroy any open PinEntryWindow
-        if hasattr(self, '_exit_pin_window') and self._exit_pin_window is not None:
-            try:
-                self._exit_pin_window.destroy()
-            except TclError as e:
-                print(f"Error destroying PinEntryWindow: {e}")
-            finally:
-                self._exit_pin_window = None
-
         # Stop the scheduler
         if self.scheduler:
             self.scheduler.stop()
@@ -324,9 +295,14 @@ class VendingMachineApp(tk.Tk):
             except Exception as e:
                 print(f"Error during SPIHandler cleanup: {e}")
 
-        # Destroy the application window
-        print("Ending communication with MDB reader...")
-        self.mdb_handler.end_comunication()
-        self.destroy()
+        # Check if MDB handler exists before calling its cleanup
+        if hasattr(self, 'mdb_handler') and self.mdb_handler:
+            try:
+                print("Ending communication with MDB reader...")
+                self.mdb_handler.end_comunication()
+            except Exception as e:
+                print(f"Error during MDBHandler cleanup: {e}")
 
+        # Destroy the application window
+        self.destroy()
 
