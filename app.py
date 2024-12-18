@@ -7,6 +7,8 @@ from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow, 
 from utils import load_locker_data, save_locker_data, send_command, log_event
 from spi_handler import SPIHandler
 from scheduler import Scheduler
+from mdb_handler import MDBHandler
+import threading
 
 class VendingMachineApp(tk.Tk):
     def __init__(self):
@@ -44,6 +46,15 @@ class VendingMachineApp(tk.Tk):
             print(f"SPI not available on this system: {e}")
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)  # Ensure SPI is closed on exit
+
+
+        self.mdb_handler = MDBHandler(port="/dev/ttyACM0", debug=True)
+        try:
+            self.mdb_handler.init_serial()
+            self.mdb_handler.init_devices()
+        except Exception as e:
+            messagebox.showerror("Error", f"MDB Initialization Failed: {e}")
+            self.mdb_handler = None
 
 
         # Setup buttons
@@ -89,20 +100,75 @@ class VendingMachineApp(tk.Tk):
         self.buttons[locker_id].config(bg="green", activebackground="green")
 
     def process_payment(self):
+        """Process payment when the PAY button is clicked."""
         if self.selected_locker is None:
             messagebox.showwarning("No Selection", "Please select a locker before paying.")
             return
-        payment_successful = True  # Replace with actual payment handling
-        if payment_successful:
-            locker_id = self.selected_locker
-            price = self.locker_data[str(locker_id)]["price"]
-            self.locker_data[str(locker_id)]["status"] = False
-            self.buttons[locker_id].config(state="disabled")
-            save_locker_data(self.locker_data)
-            log_event(locker_id, price)
-            self.unlock_locker(locker_id)
-            self.selected_locker = None
-            self.buttons[locker_id].config(bg="#C3C3C3", activebackground="#C3C3C3")
+
+        locker_id = self.selected_locker
+        price = self.locker_data[str(locker_id)]["price"]
+        product_code = locker_id  # Use locker_id as the product code for vending.
+
+        def vend_thread():
+            try:
+                # Step 1: Initialize serial communication
+                #print("Initializing serial port...")
+                #self.mdb_handler.initserial()
+
+                if self.mdb_handler.ser.is_open:
+                    #print("Serial port open. Initializing devices...")
+                    #self.mdb_handler.init_devices()
+
+                    # Step 2: Request payment (Direct Vend or Normal Vend)
+                    print(f"Requesting payment for Locker {locker_id} with Price {price}€...")
+                    direct_vend = self.mdb_handler.detect_direct_vend(str(price), str(product_code))
+
+                    if not direct_vend:  # Fallback to Normal Vend
+                        print("Direct Vend not supported. Proceeding with Normal Vend...")
+                        self.mdb_handler.normal_vend(str(price), str(product_code))
+                    else:
+                        print("Direct Vend detected. Waiting for transaction confirmation...")
+                        for i in range(self.mdb_handler.VEND_TIMEOUT):
+                            res = self.mdb_handler.readNWait()
+                            print(res)
+                            if "d,STATUS,RESULT," in res:
+                                self.mdb_handler.endTransaction(str(price), str(product_code), res)
+                                break
+                            elif i == self.mdb_handler.VEND_TIMEOUT - 1:
+                                self.mdb_handler.cancelTransaction()
+                            else:
+                                time.sleep(1)
+
+                    # Step 3: Update locker status and unlock
+                    print("Payment successful. Updating locker status...")
+                    self.locker_data[str(locker_id)]["status"] = False  # Set locker as unavailable
+                    save_locker_data(self.locker_data)
+
+                    self.buttons[locker_id].config(state="disabled")
+                    self.selected_locker = None
+                    self.buttons[locker_id].config(bg="#C3C3C3", activebackground="#C3C3C3")
+
+                    self.unlock_locker(locker_id)
+                    log_event(locker_id, price)
+                   
+
+                else:
+                    print("Failed to open Serial port.")
+                    messagebox.showerror("Error", "Failed to open Serial port.")
+
+            except Exception as e:
+                print(f"Payment Error: {e}")
+                messagebox.showerror("Error", f"Payment failed: {e}")
+
+            finally:
+                # Step 4: End communication properly
+                #print("Ending communication with MDB reader...")
+                #self.mdb_handler.end_comunication()
+                print("Finished payment process.")
+
+        # Run the payment process in a separate thread
+        threading.Thread(target=vend_thread, daemon=True).start()
+
 
 
     def unlock_locker(self, locker_id):
@@ -111,7 +177,6 @@ class VendingMachineApp(tk.Tk):
             self.spi_handler.open_locker(locker_id)  # Example SPI command
         else:
             print("SPI is disabled, skipping SPI commands.")
-        messagebox.showinfo("Locker Unlocked", f"Locker {locker_id} has been unlocked.")
 
     def on_button_press(self, event):
         self.press_time = time.time()
@@ -260,6 +325,8 @@ class VendingMachineApp(tk.Tk):
                 print(f"Error during SPIHandler cleanup: {e}")
 
         # Destroy the application window
+        print("Ending communication with MDB reader...")
+        self.mdb_handler.end_comunication()
         self.destroy()
 
 
