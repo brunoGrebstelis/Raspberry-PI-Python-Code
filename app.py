@@ -110,36 +110,63 @@ class VendingMachineApp(tk.Tk):
         product_code = locker_id  # Use locker_id as the product code for vending.
 
         def vend_thread():
+            payment_success = False  # Flag to track if payment was successful
+
             try:
-                # Step 1: Initialize serial communication
-                #print("Initializing serial port...")
-                #self.mdb_handler.initserial()
+                # Step 1: Verify the reader is still connected
+                if not self.mdb_handler:
+                    raise ConnectionError("MDB Handler is not initialized.")
 
-                if self.mdb_handler.ser.is_open:
-                    #print("Serial port open. Initializing devices...")
-                    #self.mdb_handler.init_devices()
+                try:
+                    # Test the connection by sending a status command
+                    self.mdb_handler.write2Serial("D,STATUS")
+                    response = self.mdb_handler.readNWait()
+                    if not response or "RESET" in response:
+                        raise ConnectionError("Card reader is not responding.")
+                except Exception:
+                    # Reader is disconnected; attempt reinitialization
+                    print("Card reader is disconnected. Attempting to reinitialize...")
+                    try:
+                        self.mdb_handler.initserial()
+                        self.mdb_handler.init_devices()
+                        print("Card reader reinitialized successfully.")
+                    except Exception as reinit_error:
+                        print(f"Failed to reinitialize card reader: {reinit_error}")
+                        messagebox.showerror("Reader Disconnected", "Card reader is disconnected and could not be reinitialized.")
+                        return  # Exit the thread early if reinitialization fails
 
-                    # Step 2: Request payment (Direct Vend or Normal Vend)
-                    print(f"Requesting payment for Locker {locker_id} with Price {price}€...")
-                    direct_vend = self.mdb_handler.detect_direct_vend(str(price), str(product_code))
-
-                    if not direct_vend:  # Fallback to Normal Vend
-                        print("Direct Vend not supported. Proceeding with Normal Vend...")
-                        self.mdb_handler.normal_vend(str(price), str(product_code))
+                print(f"Requesting payment for Locker {locker_id} with Price {price}€...")
+                
+                # Step 2: Attempt Direct Vend
+                direct_vend = self.mdb_handler.detect_direct_vend(str(price), str(product_code))
+                if direct_vend:
+                    print("Direct Vend detected. Waiting for transaction confirmation...")
+                    for i in range(self.mdb_handler.VEND_TIMEOUT):
+                        res = self.mdb_handler.readNWait()
+                        print(res)
+                        if "d,STATUS,RESULT,1" in res:  # Success confirmation
+                            payment_success = True
+                            self.mdb_handler.endTransaction(str(price), str(product_code), res)
+                            break
+                        elif "d,STATUS,RESULT,-1" in res:  # Cancellation confirmation
+                            print("Payment canceled by the customer.")
+                            self.mdb_handler.cancelTransaction()
+                            messagebox.showinfo("Payment Canceled", "Payment was canceled by the customer.")
+                            return  # Exit the thread early
+                        elif i == self.mdb_handler.VEND_TIMEOUT - 1:
+                            self.mdb_handler.cancelTransaction()
+                            raise TimeoutError("Transaction timed out.")
+                        else:
+                            time.sleep(1)
+                else:
+                    print("Direct Vend not supported. Proceeding with Normal Vend...")
+                    if self.mdb_handler.normal_vend(str(price), str(product_code)):
+                        payment_success = True  # Normal Vend successful
                     else:
-                        print("Direct Vend detected. Waiting for transaction confirmation...")
-                        for i in range(self.mdb_handler.VEND_TIMEOUT):
-                            res = self.mdb_handler.readNWait()
-                            print(res)
-                            if "d,STATUS,RESULT," in res:
-                                self.mdb_handler.endTransaction(str(price), str(product_code), res)
-                                break
-                            elif i == self.mdb_handler.VEND_TIMEOUT - 1:
-                                self.mdb_handler.cancelTransaction()
-                            else:
-                                time.sleep(1)
+                        raise ValueError("Normal Vend failed or insufficient funds.")
 
-                    # Step 3: Update locker status and unlock
+                # Step 3: Update locker status and unlock only if payment was successful
+                if payment_success:
                     print("Payment successful. Updating locker status...")
                     self.locker_data[str(locker_id)]["status"] = False  # Set locker as unavailable
                     save_locker_data(self.locker_data)
@@ -150,24 +177,57 @@ class VendingMachineApp(tk.Tk):
 
                     self.unlock_locker(locker_id)
                     log_event(locker_id, price)
-                   
-
+                    messagebox.showinfo("Success", f"Locker {locker_id} unlocked successfully!")
                 else:
-                    print("Failed to open Serial port.")
-                    messagebox.showerror("Error", "Failed to open Serial port.")
+                    raise ValueError("Payment verification failed. Locker will not be unlocked.")
+
+            except (ConnectionError, TimeoutError, ValueError) as e:
+                print(f"Payment Error: {e}")
+                messagebox.showerror("Payment Failed", str(e))
 
             except Exception as e:
-                print(f"Payment Error: {e}")
-                messagebox.showerror("Error", f"Payment failed: {e}")
+                print(f"Unexpected Error: {e}")
+                messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
             finally:
-                # Step 4: End communication properly
-                #print("Ending communication with MDB reader...")
-                #self.mdb_handler.end_comunication()
                 print("Finished payment process.")
 
         # Run the payment process in a separate thread
         threading.Thread(target=vend_thread, daemon=True).start()
+
+
+    def check_reader_status_and_reinitialize(self):
+        """
+        Sends a status command to the reader, checks for 'RESET' in the response,
+        and reinitializes the reader if necessary. Runs in a separate thread.
+        """
+        def status_thread():
+            try:
+                print("Checking reader status...")
+                self.mdb_handler.write2Serial("D,STATUS")  # Send the status command
+                response = self.mdb_handler.readNWait()
+
+                if "RESET" in response:
+                    print("Reader reset detected. Attempting reinitialization...")
+                    try:
+                        self.mdb_handler.initserial()
+                        self.mdb_handler.init_devices()
+                        print("Reader reinitialized successfully.")
+                    except Exception as e:
+                        print(f"Failed to reinitialize the reader: {e}")
+                        messagebox.showerror("Reader Error", "Failed to reinitialize the card reader.")
+                else:
+                    print("Reader status is normal or no reset detected.")
+
+            except Exception as e:
+                print(f"Error while checking reader status: {e}")
+            finally:
+                print("Status check thread finished.")
+
+        # Start the thread to run the status check
+        thread = threading.Thread(target=status_thread, daemon=True)
+        thread.start()
+
 
 
 
@@ -188,6 +248,7 @@ class VendingMachineApp(tk.Tk):
             self.prompt_admin_options(locker_id)
 
     def prompt_admin_options(self, locker_id):
+        self.check_reader_status_and_reinitialize()
         def pin_callback(pin):
             if pin == "4671":
                 self.show_admin_options(locker_id)
