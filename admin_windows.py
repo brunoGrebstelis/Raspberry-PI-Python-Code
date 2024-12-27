@@ -478,3 +478,50 @@ class RGBEntryWindow(Toplevel):
 # rgb_window = RGBEntryWindow(root, 255, spi_handler)
 # root.mainloop()
 
+
+class PaymentPopup(tk.Toplevel):
+    def __init__(self, master, cancel_callback):
+        super().__init__(master)
+        self.title("Processing Payment")
+        self.configure(bg="green")  # Green background for the window
+
+        # Set size and position
+        popup_width = 400
+        popup_height = 300
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x_offset = (screen_width - popup_width) // 2
+        y_offset = (screen_height - popup_height) // 2
+        self.geometry(f"{popup_width}x{popup_height}+{x_offset}+{y_offset}")
+
+        # Prevent interaction with the main window
+        self.transient(master)
+        self.grab_set()
+
+        # Add the main label with dark blue text
+        tk.Label(
+            self,
+            text="Follow the instructions on the terminal.",
+            font=("Arial", 18, "bold"),
+            bg="green",
+            fg="darkblue",
+            wraplength=popup_width - 40,  # Ensure the text fits within the window
+            justify="center"
+        ).pack(pady=(80, 20))
+
+        # Add a small cancel button in the bottom-right corner
+        cancel_button = tk.Button(
+            self,
+            text="Cancel",
+            font=("Arial", 12),
+            bg="green",
+            fg="black",
+            command=cancel_callback,
+            relief="flat"  # Remove button borders for a subtle look
+        )
+        cancel_button.place(
+            relx=0.95,  # Position relative to window width
+            rely=0.95,  # Position relative to window height
+            anchor="se"  # Anchor to the bottom-right corner
+        )
+

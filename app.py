@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import messagebox, TclError
 import time
 import os
-from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow, RGBEntryWindow
+from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow, RGBEntryWindow, PaymentPopup
 from utils import load_locker_data, save_locker_data, send_command, log_event
 from spi_handler import SPIHandler
 from scheduler import Scheduler
@@ -98,6 +98,7 @@ class VendingMachineApp(tk.Tk):
             self.buttons[self.selected_locker].config(bg="#C3C3C3", activebackground="#C3C3C3")
         self.selected_locker = locker_id
         self.buttons[locker_id].config(bg="green", activebackground="green")
+        
 
     def process_payment(self):
         """Process payment when the PAY button is clicked."""
@@ -108,51 +109,54 @@ class VendingMachineApp(tk.Tk):
         locker_id = self.selected_locker
         price = self.locker_data[str(locker_id)]["price"]
         product_code = locker_id  # Use locker_id as the product code for vending.
+        self.payment_success = False
+        self.payment_canceled = False
 
-        def vend_thread():
-            payment_success = False  # Flag to track if payment was successful
+        # Step 1: Create the popup in the main thread
+        self.popup = PaymentPopup(self, cancel_callback=self.cancel_transaction)
 
+        def payment_logic():
+            """Background thread for payment process."""
             try:
-                # Step 1: Verify the reader is still connected
+                # Verify the reader connection
                 if not self.mdb_handler:
                     raise ConnectionError("MDB Handler is not initialized.")
 
                 try:
-                    # Test the connection by sending a status command
                     self.mdb_handler.write2Serial("D,STATUS")
                     response = self.mdb_handler.readNWait()
                     if not response or "RESET" in response:
-                        raise ConnectionError("Card reader is not responding.")
-                except Exception:
-                    # Reader is disconnected; attempt reinitialization
-                    print("Card reader is disconnected. Attempting to reinitialize...")
-                    try:
+                        print("Card reader is resetting. Attempting reinitialization...")
                         self.mdb_handler.initserial()
                         self.mdb_handler.init_devices()
                         print("Card reader reinitialized successfully.")
-                    except Exception as reinit_error:
-                        print(f"Failed to reinitialize card reader: {reinit_error}")
-                        messagebox.showerror("Reader Disconnected", "Card reader is disconnected and could not be reinitialized.")
-                        return  # Exit the thread early if reinitialization fails
+                except Exception as reinit_error:
+                    print(f"Failed to reinitialize card reader: {reinit_error}")
+                    messagebox.showerror("Reader Disconnected", "Card reader is disconnected or unresponsive.")
+                    return  # Exit early if reinitialization fails
 
                 print(f"Requesting payment for Locker {locker_id} with Price {price}€...")
-                
-                # Step 2: Attempt Direct Vend
+
+                # Attempt Direct Vend
                 direct_vend = self.mdb_handler.detect_direct_vend(str(price), str(product_code))
                 if direct_vend:
                     print("Direct Vend detected. Waiting for transaction confirmation...")
                     for i in range(self.mdb_handler.VEND_TIMEOUT):
+                        if self.payment_canceled:  # Check if the user canceled
+                            print("Payment process canceled.")
+                            return
+
                         res = self.mdb_handler.readNWait()
                         print(res)
                         if "d,STATUS,RESULT,1" in res:  # Success confirmation
-                            payment_success = True
+                            self.payment_success = True
                             self.mdb_handler.endTransaction(str(price), str(product_code), res)
                             break
-                        elif "d,STATUS,RESULT,-1" in res:  # Cancellation confirmation
+                        elif "d,STATUS,RESULT,-1" in res:  # Canceled by customer
                             print("Payment canceled by the customer.")
                             self.mdb_handler.cancelTransaction()
                             messagebox.showinfo("Payment Canceled", "Payment was canceled by the customer.")
-                            return  # Exit the thread early
+                            return
                         elif i == self.mdb_handler.VEND_TIMEOUT - 1:
                             self.mdb_handler.cancelTransaction()
                             raise TimeoutError("Transaction timed out.")
@@ -161,12 +165,11 @@ class VendingMachineApp(tk.Tk):
                 else:
                     print("Direct Vend not supported. Proceeding with Normal Vend...")
                     if self.mdb_handler.normal_vend(str(price), str(product_code)):
-                        payment_success = True  # Normal Vend successful
+                        self.payment_success = True
                     else:
                         raise ValueError("Normal Vend failed or insufficient funds.")
 
-                # Step 3: Update locker status and unlock only if payment was successful
-                if payment_success:
+                if self.payment_success:
                     print("Payment successful. Updating locker status...")
                     self.locker_data[str(locker_id)]["status"] = False  # Set locker as unavailable
                     save_locker_data(self.locker_data)
@@ -190,10 +193,39 @@ class VendingMachineApp(tk.Tk):
                 messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
             finally:
-                print("Finished payment process.")
+                # Ensure the popup is closed
+                if hasattr(self, 'popup') and self.popup:
+                    self.popup.destroy()
+                    del self.popup
+                print("Payment process finished.")
 
-        # Run the payment process in a separate thread
-        threading.Thread(target=vend_thread, daemon=True).start()
+        # Step 2: Run the payment logic in a background thread
+        threading.Thread(target=payment_logic, daemon=True).start()
+
+
+
+
+    def cancel_transaction(self):
+        """Handle cancellation of the payment process."""
+        print("cancel_transaction called")  # Debugging statement
+
+        # Cancel the transaction with the MDB handler
+        if self.mdb_handler:
+            try:
+                self.mdb_handler.cancelTransaction()
+                print("Transaction safely canceled in MDB handler.")
+            except Exception as e:
+                print(f"Error during transaction cancellation: {e}")
+
+        # Close the popup
+        if hasattr(self, 'popup') and self.popup:
+            self.popup.destroy()
+            del self.popup
+
+        # Signal the payment thread to stop (if running in a thread)
+        self.payment_canceled = True
+        print("Payment process marked as canceled.")
+
 
 
     def check_reader_status_and_reinitialize(self):
