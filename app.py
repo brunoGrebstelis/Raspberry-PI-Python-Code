@@ -98,7 +98,7 @@ class VendingMachineApp(tk.Tk):
             self.buttons[self.selected_locker].config(bg="#C3C3C3", activebackground="#C3C3C3")
         self.selected_locker = locker_id
         self.buttons[locker_id].config(bg="green", activebackground="green")
-        
+
 
     def process_payment(self):
         """Process payment when the PAY button is clicked."""
@@ -180,7 +180,7 @@ class VendingMachineApp(tk.Tk):
 
                     self.unlock_locker(locker_id)
                     log_event(locker_id, price)
-                    messagebox.showinfo("Success", f"Locker {locker_id} unlocked successfully!")
+                    #messagebox.showinfo("Success", f"Locker {locker_id} unlocked successfully!")
                 else:
                     raise ValueError("Payment verification failed. Locker will not be unlocked.")
 
