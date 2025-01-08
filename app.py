@@ -9,6 +9,7 @@ from spi_handler import SPIHandler
 from scheduler import Scheduler
 from mdb_handler import MDBHandler
 import threading
+import time
 
 class VendingMachineApp(tk.Tk):
     def __init__(self):
@@ -31,6 +32,9 @@ class VendingMachineApp(tk.Tk):
 
         # Load button images
         self.button_images = [tk.PhotoImage(file=os.path.join("img", f"button{i}.png")) for i in range(1, 13)]
+
+
+        
 
         
         # SPIHandler initialization with error handling
