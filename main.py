@@ -1,19 +1,23 @@
 # main.py
 import multiprocessing
 from run_bot import main_bot
-# Suppose you also have run_gui.py for your Tkinter code, if needed
 from run_gui import main_gui
 
 def main():
-    bot_process = multiprocessing.Process(target=main_bot)
-    bot_process.start()
+    # Create a Queue for inter-process communication
+    bot_queue = multiprocessing.Queue()
 
-    # Optionally, if you have a separate GUI:
-    gui_process = multiprocessing.Process(target=main_gui)
-    gui_process.start()
+    # Bot process
+    bot_proc = multiprocessing.Process(target=main_bot, args=(bot_queue,))
+    bot_proc.start()
 
-    bot_process.join()
-    gui_process.join()
+    # GUI (vending machine) process
+    gui_proc = multiprocessing.Process(target=main_gui, args=(bot_queue,))
+    gui_proc.start()
+
+    # Wait for them to exit
+    bot_proc.join()
+    gui_proc.join()
 
 if __name__ == "__main__":
     main()

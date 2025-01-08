@@ -12,8 +12,9 @@ import threading
 import time
 
 class VendingMachineApp(tk.Tk):
-    def __init__(self):
+    def __init__(self, bot_queue):
         super().__init__()
+        self.bot_queue = bot_queue
         self.title("Vending Machine")
         self.geometry("800x480")
         self.configure(bg="#C3C3C3")
@@ -185,6 +186,12 @@ class VendingMachineApp(tk.Tk):
                     self.unlock_locker(locker_id)
                     log_event(locker_id, price)
                     #messagebox.showinfo("Success", f"Locker {locker_id} unlocked successfully!")
+                            # We can send a message to the queue
+                    message = {
+                        "chat_id": None,  # or a known chat ID if you prefer
+                        "text": f"Locker {locker_id} purchased for {price}€!"
+                    }
+                    self.bot_queue.put(message)
                 else:
                     raise ValueError("Payment verification failed. Locker will not be unlocked.")
 

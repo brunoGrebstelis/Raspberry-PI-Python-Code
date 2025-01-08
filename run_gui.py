@@ -1,9 +1,6 @@
 # run_gui.py
 from app import VendingMachineApp
 
-def main_gui():
-    app = VendingMachineApp()
+def main_gui(bot_queue):
+    app = VendingMachineApp(bot_queue)
     app.mainloop()
-
-if __name__ == "__main__":
-    main_gui()

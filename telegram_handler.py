@@ -1,4 +1,6 @@
 import asyncio
+import json
+import os
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -8,56 +10,80 @@ from telegram.ext import (
     filters,
 )
 
+CHAT_IDS_FILE = "chats.json"
+
+def load_chat_ids():
+    """Load saved chat IDs from JSON file, returning a list of ints."""
+    if not os.path.exists(CHAT_IDS_FILE):
+        return []
+    with open(CHAT_IDS_FILE, "r") as f:
+        try:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+            else:
+                return []
+        except json.JSONDecodeError:
+            return []
+
+def save_chat_ids(chat_ids):
+    """Save a list of chat IDs to JSON file."""
+    with open(CHAT_IDS_FILE, "w") as f:
+        json.dump(chat_ids, f)
 
 class TelegramBotHandler:
     """
-    A Telegram bot class that manually starts & stops the updater to avoid
-    'wait_for_stop()' issues and 'event loop already running' errors.
+    A Telegram bot that:
+    1) Records /start chat IDs in a JSON file.
+    2) Reads messages from a multiprocessing.Queue
+       and sends them to the relevant chats (or all).
     """
 
-    def __init__(self, token: str):
-        """
-        :param token: Your Telegram bot token
-        """
-        self.app = ApplicationBuilder().token(token).build()
+    def __init__(self, token: str, bot_queue):
+        self.token = token
+        self.bot_queue = bot_queue
+        self.app = ApplicationBuilder().token(self.token).build()
 
-        # Register some handlers
+        # Add some handlers
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
         )
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handler for the /start command."""
-        await update.message.reply_text("✅ Bot is online and ready!")
+        """When user sends /start, store their chat ID in chats.json if not already there."""
+        chat_id = update.effective_chat.id
+        await update.message.reply_text("✅ Bot is online! I'll notify you of purchases.")
+        
+        # Load existing chat IDs
+        chat_ids = load_chat_ids()
+        # Add if missing
+        if chat_id not in chat_ids:
+            chat_ids.append(chat_id)
+            save_chat_ids(chat_ids)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Echo any text message."""
-        message_text = update.message.text
-        await update.message.reply_text(f"You said: {message_text}")
+        """Just echo the text, for demonstration."""
+        text = update.message.text
+        await update.message.reply_text(f"You said: {text}")
 
     async def run_bot(self):
         """
-        Manually handle the bot lifecycle instead of .run_polling() or .wait_for_stop():
-          1) initialize the bot
-          2) start the bot
-          3) start polling
-          4) keep running until the process is killed or an error occurs
-          5) finally stop & shutdown
+        1) Initialize and start the bot
+        2) Start polling
+        3) Start a background task to read from queue
+        4) Keep running until the process is stopped
+        5) On exit, stop & shutdown
         """
         try:
-            # 1) Initialize resources
             await self.app.initialize()
-
-            # 2) Start the bot (this sets up internal tasks, etc.)
             await self.app.start()
-
-            # 3) Start polling in a background task
             await self.app.updater.start_polling()
 
-            # 4) Keep the bot running "forever"
-            #    In a kiosk or server scenario, you often just let it run until
-            #    the process is killed or an exception stops it.
+            # Start reading from the queue in a background task
+            asyncio.create_task(self.read_queue_loop())
+
+            # Keep running "forever" until process is killed
             while True:
                 await asyncio.sleep(999999)
 
@@ -66,18 +92,41 @@ class TelegramBotHandler:
 
         finally:
             print("[TelegramBotHandler] Stopping updater ...")
-            await self.app.updater.stop()     # Stop polling
-            await self.app.stop()            # Stop the application
-            await self.app.shutdown()        # Cleanup resources
+            await self.app.updater.stop()
+            await self.app.stop()
+            await self.app.shutdown()
             print("[TelegramBotHandler] Bot shutdown complete.")
 
-    def send_message(self, chat_id: int, text: str):
+    async def read_queue_loop(self):
         """
-        If you want to send a message programmatically from within the same process,
-        you can schedule it on the event loop. This won't work across processes
-        without extra inter-process communication.
+        Continuously read messages from the multiprocessing.Queue.
+        If 'chat_id' is None, broadcast to ALL saved IDs.
+        If 'chat_id' is an integer, send only to that one chat.
         """
-        asyncio.run_coroutine_threadsafe(
-            self.app.bot.send_message(chat_id=chat_id, text=text),
-            self.app.runner._loop,
-        )
+        while True:
+            # Because queue.get() is blocking, do it in a thread so we don't block the event loop
+            msg = await asyncio.to_thread(self.bot_queue.get)
+
+            # If we decide 'None' is a stop signal:
+            if msg is None:
+                print("[TelegramBotHandler] Received stop signal from queue.")
+                break
+
+            # Expecting a dict like { "chat_id": ..., "text": ... }
+            chat_id = msg.get("chat_id")
+            text = msg.get("text", "No text found")
+
+            # If chat_id is None, broadcast to all saved IDs
+            if chat_id is None:
+                all_chat_ids = load_chat_ids()
+                for cid in all_chat_ids:
+                    try:
+                        await self.app.bot.send_message(chat_id=cid, text=text)
+                    except Exception as err:
+                        print(f"[TelegramBotHandler] Failed to send to {cid}: {err}")
+            else:
+                # Directly send to the specified chat
+                try:
+                    await self.app.bot.send_message(chat_id=chat_id, text=text)
+                except Exception as err:
+                    print(f"[TelegramBotHandler] Failed to send to {chat_id}: {err}")
