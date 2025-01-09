@@ -182,6 +182,25 @@ def generate_summary(period: str) -> str:
     return summary
 
 
+def generate_locker_info():
+    """
+    Loads lockers.json and returns a string listing each locker.
+    If status is true => show price
+    If status is false => show "empty"
+    """
+    data = load_locker_data()   # This function is already in utils.py
+    lines = []
+    for locker_id_str, locker_dict in data.items():
+        price = locker_dict.get("price", 0)
+        status = locker_dict.get("status", True)
+        if status:
+            lines.append(f"Locker {locker_id_str} = {price}€")
+        else:
+            lines.append(f"Locker {locker_id_str} = empty")
+    return "\n".join(lines)
+
+
+
 def interpret_and_notify(data):
 
     if not isinstance(data, (bytes, bytearray)) or len(data) != 5:

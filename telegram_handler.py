@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from utils import generate_locker_info
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -46,6 +47,7 @@ class TelegramBotHandler:
 
         # Add some handlers
         self.app.add_handler(CommandHandler("start", self.start_command))
+        self.app.add_handler(CommandHandler("info", self.info_command))
         self.app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
         )
@@ -67,6 +69,15 @@ class TelegramBotHandler:
         text = update.message.text
         await update.message.reply_text(f"You said: {text}")
 
+
+    async def info_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Respond to /info by showing locker prices from lockers.json.
+        """
+        info_text = generate_locker_info()   # calls the function in utils.py
+        await update.message.reply_text(info_text)
+
+
     async def run_bot(self):
         """
         1) Initialize and start the bot
@@ -81,11 +92,10 @@ class TelegramBotHandler:
             await self.app.updater.start_polling()
 
             # Start reading from the queue in a background task
-            asyncio.create_task(self.read_queue_loop())
+            queue_task = asyncio.create_task(self.read_queue_loop())
 
-            # Keep running "forever" until process is killed
-            while True:
-                await asyncio.sleep(999999)
+            # Keep running until the process is stopped
+            await queue_task
 
         except Exception as e:
             print(f"[TelegramBotHandler] Caught exception: {e}")
@@ -96,6 +106,7 @@ class TelegramBotHandler:
             await self.app.stop()
             await self.app.shutdown()
             print("[TelegramBotHandler] Bot shutdown complete.")
+            
 
     async def read_queue_loop(self):
         """
@@ -104,10 +115,9 @@ class TelegramBotHandler:
         If 'chat_id' is an integer, send only to that one chat.
         """
         while True:
-            # Because queue.get() is blocking, do it in a thread so we don't block the event loop
             msg = await asyncio.to_thread(self.bot_queue.get)
 
-            # If we decide 'None' is a stop signal:
+            # If the message is None, stop the bot
             if msg is None:
                 print("[TelegramBotHandler] Received stop signal from queue.")
                 break
@@ -116,17 +126,31 @@ class TelegramBotHandler:
             chat_id = msg.get("chat_id")
             text = msg.get("text", "No text found")
 
-            # If chat_id is None, broadcast to all saved IDs
+            # Send the message
             if chat_id is None:
                 all_chat_ids = load_chat_ids()
+                if not all_chat_ids:
+                    print("[TelegramBotHandler] No chat IDs found. Skipping broadcast.")
+                    continue
                 for cid in all_chat_ids:
-                    try:
-                        await self.app.bot.send_message(chat_id=cid, text=text)
-                    except Exception as err:
-                        print(f"[TelegramBotHandler] Failed to send to {cid}: {err}")
+                    await self._send_message_with_retries(cid, text)
             else:
-                # Directly send to the specified chat
-                try:
-                    await self.app.bot.send_message(chat_id=chat_id, text=text)
-                except Exception as err:
-                    print(f"[TelegramBotHandler] Failed to send to {chat_id}: {err}")
+                await self._send_message_with_retries(chat_id, text)
+
+
+    async def _send_message_with_retries(self, chat_id, text, retries=3):
+        """
+        Send a message to a specific chat ID with retry logic.
+        """
+        for attempt in range(retries):
+            try:
+                await self.app.bot.send_message(chat_id=chat_id, text=text)
+                print(f"[TelegramBotHandler] Message sent to {chat_id}")
+                return
+            except Exception as err:
+                print(f"[TelegramBotHandler] Attempt {attempt + 1} failed to send to {chat_id}: {err}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                else:
+                    print(f"[TelegramBotHandler] Failed to send message to {chat_id} after {retries} attempts.")
+

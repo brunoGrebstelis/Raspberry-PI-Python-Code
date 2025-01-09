@@ -408,5 +408,6 @@ class VendingMachineApp(tk.Tk):
                 print(f"Error during MDBHandler cleanup: {e}")
 
         # Destroy the application window
+        self.bot_queue.put(None)  # Tells the bot to stop
         self.destroy()
 
