@@ -188,6 +188,7 @@ class TelegramBotHandler:
     async def _send_message_with_retries(self, chat_id, text, retries=5):
         """
         Send a message to a specific chat ID with retry logic.
+        The first retry is faster to improve success rate.
         """
         for attempt in range(retries):
             try:
@@ -196,7 +197,11 @@ class TelegramBotHandler:
                 return
             except Exception as err:
                 print(f"[TelegramBotHandler] Attempt {attempt + 1} failed to send to {chat_id}: {err}")
-                if attempt < retries - 1:
+
+                # Fast retry for the first attempt, then exponential backoff
+                if attempt == 0:
+                    await asyncio.sleep(0.5)  # Fast retry after 0.5 seconds
+                elif attempt < retries - 1:
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
                 else:
                     print(f"[TelegramBotHandler] Failed to send message to {chat_id} after {retries} attempts.")
