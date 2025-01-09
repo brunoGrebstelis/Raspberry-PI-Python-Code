@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from utils import generate_locker_info
+from utils import generate_locker_info, generate_sales_report
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TimedOut, BadRequest
 from telegram.ext import (
@@ -176,18 +176,26 @@ class TelegramBotHandler:
             context.user_data.clear()
 
     async def sales(self, period: str):
-        """
-        Broadcast the given sales period message to all chat IDs 
-        stored in chats.json.
-        """
         all_chat_ids = load_chat_ids()
         if not all_chat_ids:
             print("[sales] No chat IDs found. Nobody to send the sales report to.")
             return
 
-        text = f"📊 Sales report for: {period}"
+        # 1) Let utils.py do the heavy lifting
+        report_text, line_chart_path, pie_chart_path = generate_sales_report(period)
+
+        # 2) Send the results to each chat
         for cid in all_chat_ids:
-            await self._send_message_with_retries(cid, text)
+            # Send the text
+            await self._send_message_with_retries(cid, report_text)
+
+            # Send line chart if generated
+            if line_chart_path and os.path.isfile(line_chart_path):
+                await self._send_photo_with_retries(cid, line_chart_path, caption="Sales Over Time")
+
+            # Send pie chart if generated
+            if pie_chart_path and os.path.isfile(pie_chart_path):
+                await self._send_photo_with_retries(cid, pie_chart_path, caption="Best Selling Lockers")
 
     async def _retry(self, func, *args, retries=5, **kwargs):
         """
@@ -245,6 +253,42 @@ class TelegramBotHandler:
                         await asyncio.sleep(2 ** attempt)
                 else:
                     print(f"[TelegramBotHandler] Failed to send message to {chat_id} after {retries} attempts.")
+                    return
+                
+
+    async def _send_photo_with_retries(self, chat_id, image_path, caption="", retries=5):
+        """
+        Send a photo to a specific chat ID with retry logic.
+        The first retry is faster to improve success rate.
+        """
+        for attempt in range(retries):
+            try:
+                with open(image_path, "rb") as f:
+                    await self.app.bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
+                print(f"[TelegramBotHandler] Photo sent to {chat_id}")
+                return
+            except TimedOut as e:
+                print(f"Attempt {attempt + 1} failed (TimedOut) to send photo to {chat_id}: {e}")
+                if attempt < retries - 1:
+                    if attempt == 0:
+                        await asyncio.sleep(0.5)  # fast retry
+                    else:
+                        await asyncio.sleep(2 ** attempt)
+                else:
+                    print(f"[TelegramBotHandler] Failed to send photo to {chat_id} after {retries} attempts.")
+                    return
+            except BadRequest as e:
+                print(f"[TelegramBotHandler] BadRequest (photo) to {chat_id}: {e}")
+                return
+            except Exception as e:
+                print(f"[TelegramBotHandler] Attempt {attempt + 1} failed (Other Error) to send photo to {chat_id}: {e}")
+                if attempt < retries - 1:
+                    if attempt == 0:
+                        await asyncio.sleep(0.5)
+                    else:
+                        await asyncio.sleep(2 ** attempt)
+                else:
+                    print(f"[TelegramBotHandler] Failed to send photo to {chat_id} after {retries} attempts.")
                     return
 
     async def run_bot(self):
