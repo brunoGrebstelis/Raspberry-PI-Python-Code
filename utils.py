@@ -5,6 +5,7 @@ import csv
 import sqlite3
 from datetime import datetime, timedelta
 from collections import Counter
+import matplotlib.pyplot as plt
 
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -13,6 +14,8 @@ from email import encoders
 import base64
 
 from admin_windows import InformationWindow
+from collections import defaultdict, Counter
+
 
 
 LOG_FOLDER = "logs"
@@ -107,7 +110,281 @@ def log_event(locker_id, price):
     print(f"Logged: Locker {locker_id}, Price €{price}, Date {current_date}, Time {current_time}")
 
 
+def parse_period(period: str):
+    """
+    Convert the user-friendly 'period' (e.g. "This Month", "2025-01", "2025-01-01 to 2025-01-05")
+    into (start_date, end_date).
+    
+    Returns (start_date, end_date) as datetime objects, or None if we can't interpret.
+    """
 
+    now = datetime.now()
+    
+    # Manual range "YYYY-MM-DD to YYYY-MM-DD"?
+    if " to " in period:
+        parts = period.split(" to ")
+        if len(parts) == 2:
+            try:
+                start_dt = datetime.strptime(parts[0], "%Y-%m-%d")
+                end_dt = datetime.strptime(parts[1], "%Y-%m-%d")
+                if end_dt < start_dt:
+                    # Swap if user wrote them backwards
+                    start_dt, end_dt = end_dt, start_dt
+                return (start_dt, end_dt)
+            except ValueError:
+                return None
+    p_lower = period.lower()
+
+    # "today"
+    if p_lower == "today":
+        start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_dt = start_dt  # same day
+        return (start_dt, end_dt)
+
+    # "yesterday"
+    if p_lower == "yesterday":
+        yest = now - timedelta(days=1)
+        start_dt = yest.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_dt = start_dt
+        return (start_dt, end_dt)
+
+    # "this month"
+    if p_lower == "this month":
+        # 1st day of current month
+        start_dt = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # end of this month
+        # approach: next month day=1 minus 1 day
+        if start_dt.month == 12:
+            next_month = start_dt.replace(year=start_dt.year + 1, month=1, day=1)
+        else:
+            next_month = start_dt.replace(month=start_dt.month + 1, day=1)
+        end_dt = next_month - timedelta(days=1)
+        return (start_dt, end_dt)
+
+    # "last month"
+    if p_lower == "last month":
+        # We subtract 1 month from 'now'
+        # but let's do it from the 1st of this month
+        first_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month_end = first_this_month - timedelta(days=1)  # This becomes last day of previous month
+        # Now we find the start of that last month
+        start_dt = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end_dt = last_month_end
+        return (start_dt, end_dt)
+
+    # "this year"
+    if p_lower == "this year":
+        start_dt = datetime(now.year, 1, 1)
+        end_dt = datetime(now.year, 12, 31, 23, 59, 59)
+        return (start_dt, end_dt)
+
+    # "last year"
+    if p_lower == "last year":
+        ly = now.year - 1
+        start_dt = datetime(ly, 1, 1)
+        end_dt = datetime(ly, 12, 31, 23, 59, 59)
+        return (start_dt, end_dt)
+
+    # "total" or "then" => interpret as all-time
+    if p_lower in ["total", "then"]:
+        # earliest possible date
+        # or you might look in DB for earliest record
+        start_dt = datetime(2000, 1, 1)
+        end_dt = now  # up to current day
+        return (start_dt, end_dt)
+
+    # If it's exactly YYYY => entire year
+    if len(period) == 4 and period.isdigit():
+        year_int = int(period)
+        start_dt = datetime(year_int, 1, 1)
+        end_dt = datetime(year_int, 12, 31, 23, 59, 59)
+        return (start_dt, end_dt)
+
+    # If it's YYYY-MM => parse month
+    if len(period) == 7:
+        try:
+            year_str, month_str = period.split("-")
+            year_int = int(year_str)
+            month_int = int(month_str)
+            start_dt = datetime(year_int, month_int, 1)
+            # next month:
+            if month_int == 12:
+                next_month = start_dt.replace(year=year_int + 1, month=1)
+            else:
+                next_month = start_dt.replace(month=month_int + 1)
+            end_dt = next_month - timedelta(days=1)
+            return (start_dt, end_dt)
+        except:
+            return None
+
+    # If it's YYYY-MM-DD => parse day
+    if len(period) == 10:
+        try:
+            day_dt = datetime.strptime(period, "%Y-%m-%d")
+            return (day_dt, day_dt)
+        except ValueError:
+            return None
+
+    # If all else fails, can't interpret
+    return None
+
+
+def group_sales_data(rows, start_dt, end_dt):
+    """
+    Groups sales data based on the specified period.
+
+    Args:
+        rows (list): List of tuples containing (date_str, time_str, locker_id, price).
+        start_dt (datetime): Start datetime object.
+        end_dt (datetime): End datetime object.
+
+    Returns:
+        tuple: (grouped_sums, locker_earnings, grouping)
+            - grouped_sums (dict): {group_key: total_earnings}
+            - locker_earnings (dict): {locker_id: total_money}
+            - grouping (str): The grouping level ('hour', 'day', 'month', 'year')
+    """
+    diff_days = (end_dt - start_dt).days
+
+    # Decide grouping
+    if diff_days <= 3:
+        grouping = "hour"
+    elif diff_days <= 30:
+        grouping = "day"
+    elif diff_days <= 365:
+        grouping = "month"
+    else:
+        grouping = "year"
+
+    grouped_sums = defaultdict(float)
+    locker_earnings = defaultdict(float)
+
+    for (sale_date_str, sale_time_str, locker_id, price) in rows:
+        # Parse the sale datetime
+        try:
+            sale_dt = datetime.strptime(f"{sale_date_str} {sale_time_str}", "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            # Handle unexpected time format
+            sale_dt = datetime.strptime(sale_date_str, "%Y-%m-%d")  # Fallback to date only
+
+        if grouping == "hour":
+            # Group by each hour within the day
+            group_key = sale_dt.strftime("%Y-%m-%d %H:00")
+        elif grouping == "day":
+            group_key = sale_dt.strftime("%Y-%m-%d")
+        elif grouping == "month":
+            group_key = sale_dt.strftime("%Y-%m")
+        else:  # "year"
+            group_key = sale_dt.strftime("%Y")
+
+        grouped_sums[group_key] += price
+        locker_earnings[locker_id] += price
+
+    return grouped_sums, locker_earnings, grouping
+
+
+def generate_sales_report(period: str):
+    """
+    Generates a sales report based on the specified period.
+    
+    Returns:
+        Tuple containing:
+        - report_text (str): The textual summary of the sales report.
+        - line_chart_path (str): File path to the generated line chart image.
+        - pie_chart_path (str): File path to the generated pie chart image.
+    """
+    date_range = parse_period(period)
+    if not date_range:
+        return (f"❌ Could not interpret period: {period}", None, None)
+
+    (start_dt, end_dt) = date_range
+
+    # 2) Query logs in that range
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    # **Modified SELECT query to include 'time'**
+    query = """
+        SELECT date, time, locker_id, price
+        FROM logs
+        WHERE date >= ? AND date <= ?
+        ORDER BY date ASC, time ASC
+    """
+    start_str = start_dt.strftime("%Y-%m-%d")
+    end_str = end_dt.strftime("%Y-%m-%d")
+    cursor.execute(query, (start_str, end_str))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return (f"🤷 No logs found from {start_str} to {end_str} ({period}).", None, None)
+
+    # 3) Group sums
+    grouped_sums, locker_earnings, grouping = group_sales_data(rows, start_dt, end_dt)
+    # Total earnings
+    total_earnings = sum(grouped_sums.values())
+
+    # Sort the group keys
+    sorted_groups = sorted(grouped_sums.items(), key=lambda x: x[0])
+    # Top 3 groups by sum
+    top_3 = sorted(grouped_sums.items(), key=lambda x: x[1], reverse=True)[:3]
+
+    # Sort lockers by earnings
+    sorted_lockers = sorted(locker_earnings.items(), key=lambda x: x[1], reverse=True)
+    top_3_lockers = sorted_lockers[:3]
+
+    # 4) Build text summary with emojis
+    lines = []
+    lines.append(f"🗓 *Sales Report for {period}*")
+    lines.append(f"📅 *Date Range:* {start_dt.strftime('%Y-%m-%d')} → {end_dt.strftime('%Y-%m-%d')}")
+    lines.append(f"💰 *Total Earnings:* €{total_earnings:,.2f}")
+    lines.append("")
+    lines.append(f"📊 *Grouping by:* {grouping.capitalize()}")
+    lines.append("🔥 *Top 3 Groups (by earnings):*")
+    for (g, val) in top_3:
+        lines.append(f"   • {g}: €{val:,.2f}")
+    lines.append("")
+    lines.append("💎 *Top 3 Lockers (by earnings):*")
+    for (locker_id, amt) in top_3_lockers:
+        lines.append(f"   • Locker {locker_id}: €{amt:,.2f}")
+    report_text = "\n".join(lines)
+
+    # 5) Build charts
+    # -- (a) Line Chart --
+    x_vals = [kv[0] for kv in sorted_groups]
+    y_vals = [kv[1] for kv in sorted_groups]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(x_vals, y_vals, marker='o', linestyle='-', color='blue')
+    plt.xticks(rotation=45, ha='right')
+    plt.xlabel(grouping.capitalize())
+    plt.ylabel("Earnings (€)")
+    plt.title(f"Earnings Over Time: {period}")
+    plt.grid(True)
+    plt.tight_layout()
+    line_chart_path = "line_chart.png"
+    plt.savefig(line_chart_path)
+    plt.close()
+
+    # -- (b) Pie Chart of Locker Earnings --
+    # Labels include locker ID and total money earned
+    labels = []
+    values = []
+    for (locker_id, amt) in sorted_lockers:
+        label_str = f"Locker {locker_id}: €{amt:,.2f}"
+        labels.append(label_str)
+        values.append(amt)
+
+    plt.figure(figsize=(8, 8))
+    if sum(values) == 0:
+        plt.text(0.5, 0.5, "No earnings", horizontalalignment='center', verticalalignment='center', fontsize=12)
+    else:
+        plt.pie(values, labels=labels, autopct="%1.1f%%", startangle=140)
+        plt.title(f"Locker Earnings Distribution: {period}")
+    pie_chart_path = "pie_chart.png"
+    plt.savefig(pie_chart_path)
+    plt.close()
+
+    return (report_text, line_chart_path, pie_chart_path)
 
 
 def generate_summary(period: str) -> str:
