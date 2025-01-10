@@ -239,10 +239,12 @@ def group_sales_data(rows, start_dt, end_dt):
         end_dt (datetime): End datetime object.
 
     Returns:
-        tuple: (grouped_sums, locker_earnings, grouping)
+        tuple: (grouped_sums, locker_earnings, grouping, group_sales_counts, locker_sales_counts)
             - grouped_sums (dict): {group_key: total_earnings}
             - locker_earnings (dict): {locker_id: total_money}
             - grouping (str): The grouping level ('hour', 'day', 'month', 'year')
+            - group_sales_counts (dict): {group_key: total_sales_count}
+            - locker_sales_counts (dict): {locker_id: total_sales_count}
     """
     diff_days = (end_dt - start_dt).days
 
@@ -258,6 +260,8 @@ def group_sales_data(rows, start_dt, end_dt):
 
     grouped_sums = defaultdict(float)
     locker_earnings = defaultdict(float)
+    group_sales_counts = defaultdict(int)
+    locker_sales_counts = defaultdict(int)
 
     for (sale_date_str, sale_time_str, locker_id, price) in rows:
         # Parse the sale datetime
@@ -279,8 +283,11 @@ def group_sales_data(rows, start_dt, end_dt):
 
         grouped_sums[group_key] += price
         locker_earnings[locker_id] += price
+        group_sales_counts[group_key] += 1
+        locker_sales_counts[locker_id] += 1
 
-    return grouped_sums, locker_earnings, grouping
+    return grouped_sums, locker_earnings, grouping, group_sales_counts, locker_sales_counts
+
 
 
 def generate_sales_report(period: str):
@@ -295,14 +302,14 @@ def generate_sales_report(period: str):
     """
     date_range = parse_period(period)
     if not date_range:
-        return (f"❌ Could not interpret period: {period}", None, None)
+        return (f"Could not interpret period: {period}", None, None)
 
     (start_dt, end_dt) = date_range
 
     # 2) Query logs in that range
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # **Modified SELECT query to include 'time'**
+    # Modified SELECT query to include 'time'
     query = """
         SELECT date, time, locker_id, price
         FROM logs
@@ -316,70 +323,85 @@ def generate_sales_report(period: str):
     conn.close()
 
     if not rows:
-        return (f"🤷 No logs found from {start_str} to {end_str} ({period}).", None, None)
+        return (f"No logs found from {start_str} to {end_str} ({period}).", None, None)
 
-    # 3) Group sums
-    grouped_sums, locker_earnings, grouping = group_sales_data(rows, start_dt, end_dt)
-    # Total earnings
+    # 3) Group sums and count sales
+    grouped_sums, locker_earnings, grouping, group_sales_counts, locker_sales_counts = group_sales_data(rows, start_dt, end_dt)
+    # Total earnings and total purchases
     total_earnings = sum(grouped_sums.values())
+    total_purchases = sum(group_sales_counts.values())
 
     # Sort the group keys
     sorted_groups = sorted(grouped_sums.items(), key=lambda x: x[0])
     # Top 3 groups by sum
     top_3 = sorted(grouped_sums.items(), key=lambda x: x[1], reverse=True)[:3]
+    # Get corresponding sales counts for top 3 groups
+    top_3_with_counts = [(g, v, group_sales_counts[g]) for (g, v) in top_3]
 
-    # Sort lockers by earnings
-    sorted_lockers = sorted(locker_earnings.items(), key=lambda x: x[1], reverse=True)
+    # Sort lockers by number of sales (for pie chart based on sales)
+    sorted_lockers = sorted(locker_sales_counts.items(), key=lambda x: x[1], reverse=True)
+    # Top 3 lockers by sales
     top_3_lockers = sorted_lockers[:3]
 
-    # 4) Build text summary with emojis
+    # Sort lockers by earnings for labels
+    sorted_lockers_by_earnings = sorted(locker_earnings.items(), key=lambda x: x[1], reverse=True)
+
+    # 4) Build text summary without emojis
     lines = []
-    lines.append(f"🗓 *Sales Report for {period}*")
-    lines.append(f"📅 *Date Range:* {start_dt.strftime('%Y-%m-%d')} → {end_dt.strftime('%Y-%m-%d')}")
-    lines.append(f"💰 *Total Earnings:* €{total_earnings:,.2f}")
+    lines.append(f"Sales Report for {period}")
+    lines.append(f"Date Range: {start_dt.strftime('%Y-%m-%d')} → {end_dt.strftime('%Y-%m-%d')}")
+    lines.append(f"Total Earnings: €{total_earnings:,.2f}")
+    lines.append(f"Total Purchases: {total_purchases}")
     lines.append("")
-    lines.append(f"📊 *Grouping by:* {grouping.capitalize()}")
-    lines.append("🔥 *Top 3 Groups (by earnings):*")
-    for (g, val) in top_3:
-        lines.append(f"   • {g}: €{val:,.2f}")
+    lines.append(f"Grouping by: {grouping.capitalize()}")
+    lines.append("Top 3 Groups (by earnings):")
+    for (g, val, count) in top_3_with_counts:
+        lines.append(f"   • {g}: €{val:,.2f} ({count} sales)")
     lines.append("")
-    lines.append("💎 *Top 3 Lockers (by earnings):*")
-    for (locker_id, amt) in top_3_lockers:
-        lines.append(f"   • Locker {locker_id}: €{amt:,.2f}")
+    lines.append("Top 3 Lockers (by sales):")
+    for (locker_id, count) in top_3_lockers:
+        earnings = locker_earnings.get(locker_id, 0.0)
+        lines.append(f"   • Locker {locker_id}: €{earnings:,.2f} ({count} sales)")
     report_text = "\n".join(lines)
 
     # 5) Build charts
     # -- (a) Line Chart --
     x_vals = [kv[0] for kv in sorted_groups]
     y_vals = [kv[1] for kv in sorted_groups]
+    sales_counts = [group_sales_counts[kv[0]] for kv in sorted_groups]
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(x_vals, y_vals, marker='o', linestyle='-', color='blue')
-    plt.xticks(rotation=45, ha='right')
+    plt.figure(figsize=(12, 6))
+    plt.plot(x_vals, y_vals, marker='o', linestyle='-', color='blue', label='Earnings (€)')
     plt.xlabel(grouping.capitalize())
     plt.ylabel("Earnings (€)")
     plt.title(f"Earnings Over Time: {period}")
+    plt.xticks(rotation=45, ha='right')
     plt.grid(True)
+
+    # Annotate each point with earnings and number of sales
+    for x, y, count in zip(x_vals, y_vals, sales_counts):
+        plt.annotate(f"€{y:.2f}\n({count})", (x, y), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8)
+
     plt.tight_layout()
     line_chart_path = "line_chart.png"
     plt.savefig(line_chart_path)
     plt.close()
 
-    # -- (b) Pie Chart of Locker Earnings --
-    # Labels include locker ID and total money earned
+    # -- (b) Pie Chart based on number of sales --
+    # Labels include locker ID, earnings, and number of sales
     labels = []
     values = []
-    for (locker_id, amt) in sorted_lockers:
-        label_str = f"Locker {locker_id}: €{amt:,.2f}"
-        labels.append(label_str)
-        values.append(amt)
+    for (locker_id, sales_count) in sorted_lockers_by_earnings:
+        earnings = locker_earnings.get(locker_id, 0.0)
+        labels.append(f"Locker {locker_id}: €{earnings:,.2f} ({sales_count} sales)")
+        values.append(sales_count)
 
     plt.figure(figsize=(8, 8))
     if sum(values) == 0:
-        plt.text(0.5, 0.5, "No earnings", horizontalalignment='center', verticalalignment='center', fontsize=12)
+        plt.text(0.5, 0.5, "No sales", horizontalalignment='center', verticalalignment='center', fontsize=12)
     else:
-        plt.pie(values, labels=labels, autopct="%1.1f%%", startangle=140)
-        plt.title(f"Locker Earnings Distribution: {period}")
+        plt.pie(values, labels=labels, autopct=lambda pct: f"{pct:.1f}%" if pct > 0 else '', startangle=140)
+        plt.title(f"Locker Sales Distribution: {period}")
     pie_chart_path = "pie_chart.png"
     plt.savefig(pie_chart_path)
     plt.close()
