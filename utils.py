@@ -260,8 +260,8 @@ def group_sales_data(rows, start_dt, end_dt):
 
     grouped_sums = defaultdict(float)
     locker_earnings = defaultdict(float)
-    group_sales_counts = defaultdict(int)
-    locker_sales_counts = defaultdict(int)
+    group_sales_counts = defaultdict(int)       # New: Count of sales per group
+    locker_sales_counts = defaultdict(int)      # New: Count of sales per locker
 
     for (sale_date_str, sale_time_str, locker_id, price) in rows:
         # Parse the sale datetime
@@ -283,10 +283,12 @@ def group_sales_data(rows, start_dt, end_dt):
 
         grouped_sums[group_key] += price
         locker_earnings[locker_id] += price
-        group_sales_counts[group_key] += 1
-        locker_sales_counts[locker_id] += 1
+        group_sales_counts[group_key] += 1               # Increment sales count for the group
+        locker_sales_counts[locker_id] += 1              # Increment sales count for the locker
 
     return grouped_sums, locker_earnings, grouping, group_sales_counts, locker_sales_counts
+
+
 
 
 
@@ -338,13 +340,12 @@ def generate_sales_report(period: str):
     # Get corresponding sales counts for top 3 groups
     top_3_with_counts = [(g, v, group_sales_counts[g]) for (g, v) in top_3]
 
-    # Sort lockers by number of sales (for pie chart based on sales)
-    sorted_lockers = sorted(locker_sales_counts.items(), key=lambda x: x[1], reverse=True)
-    # Top 3 lockers by sales
-    top_3_lockers = sorted_lockers[:3]
-
-    # Sort lockers by earnings for labels
+    # **Change Starts Here: Sort Lockers by Earnings Instead of Sales Counts**
+    # Sort lockers by total earnings in descending order
     sorted_lockers_by_earnings = sorted(locker_earnings.items(), key=lambda x: x[1], reverse=True)
+    # Select Top 3 Lockers based on earnings
+    top_3_lockers = sorted_lockers_by_earnings[:3]
+    # **Change Ends Here**
 
     # 4) Build text summary without emojis
     lines = []
@@ -356,12 +357,12 @@ def generate_sales_report(period: str):
     lines.append(f"Grouping by: {grouping.capitalize()}")
     lines.append("Top 3 Groups (by earnings):")
     for (g, val, count) in top_3_with_counts:
-        lines.append(f"   • {g}: €{val:,.2f} ({count} sales)")
+        lines.append(f"   • {g}: €{val:,.2f} ({count})")
     lines.append("")
-    lines.append("Top 3 Lockers (by sales):")
-    for (locker_id, count) in top_3_lockers:
-        earnings = locker_earnings.get(locker_id, 0.0)
-        lines.append(f"   • Locker {locker_id}: €{earnings:,.2f} ({count} sales)")
+    lines.append("Top 3 Lockers (by earnings):")  # Updated Title
+    for (locker_id, earnings) in top_3_lockers:
+        sales_count = locker_sales_counts.get(locker_id, 0)
+        lines.append(f"   • Locker {locker_id}: €{earnings:,.2f} ({sales_count})")
     report_text = "\n".join(lines)
 
     # 5) Build charts
@@ -388,13 +389,22 @@ def generate_sales_report(period: str):
     plt.close()
 
     # -- (b) Pie Chart based on number of sales --
-    # Labels include locker ID, earnings, and number of sales
+    # Labels include locker ID, earnings, and number of sales without the word "sales"
     labels = []
     values = []
-    for (locker_id, sales_count) in sorted_lockers_by_earnings:
+    for (locker_id, sales_count) in locker_sales_counts.items():
         earnings = locker_earnings.get(locker_id, 0.0)
-        labels.append(f"Locker {locker_id}: €{earnings:,.2f} ({sales_count} sales)")
+        labels.append(f"Locker {locker_id}: €{earnings:,.2f} ({sales_count})")
         values.append(sales_count)
+
+    # If you only want to include the top 3 lockers in the pie chart:
+    # Uncomment the following lines and comment out the above for-loop
+    # labels = []
+    # values = []
+    # for (locker_id, earnings) in top_3_lockers:
+    #     sales_count = locker_sales_counts.get(locker_id, 0)
+    #     labels.append(f"Locker {locker_id}: €{earnings:,.2f} ({sales_count})")
+    #     values.append(sales_count)
 
     plt.figure(figsize=(8, 8))
     if sum(values) == 0:
@@ -407,6 +417,9 @@ def generate_sales_report(period: str):
     plt.close()
 
     return (report_text, line_chart_path, pie_chart_path)
+
+
+
 
 
 def generate_summary(period: str) -> str:
