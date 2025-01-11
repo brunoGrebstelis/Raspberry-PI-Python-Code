@@ -10,14 +10,25 @@ from scheduler import Scheduler
 from mdb_handler import MDBHandler
 import threading
 import time
+from gui import (
+    size, 
+    load_images, 
+    create_locker_buttons, 
+    create_pay_button,
+    create_close_button,
+    create_title_bar
+)
 
 class VendingMachineApp(tk.Tk):
     def __init__(self, bot_queue):
         super().__init__()
         self.bot_queue = bot_queue
-        self.title("Vending Machine")
-        self.geometry("800x480")
-        self.configure(bg="#C3C3C3")
+
+        # Remove window decorations
+        self.overrideredirect(True)
+        self.focus_force()
+
+        size(self)
         self.selected_locker = None
         self.locker_data = load_locker_data()
 
@@ -28,12 +39,8 @@ class VendingMachineApp(tk.Tk):
         # Boolean to enable or disable PIN check on exit
         self.require_exit_pin = False  # Set to False to disable PIN verification on exit
 
-        # Load images (assuming they're in an 'img' folder)
-        self.pay_image = tk.PhotoImage(file=os.path.join("img", "icon3.png"))
-
-        # Load button images
-        self.button_images = [tk.PhotoImage(file=os.path.join("img", f"button{i}.png")) for i in range(1, 13)]
-
+        # Load images 
+        load_images(self)
 
         
 
@@ -62,41 +69,25 @@ class VendingMachineApp(tk.Tk):
             self.mdb_handler = None
 
 
+        # Create custom title bar
+        create_title_bar(self)
+
+
         # Setup buttons
-        self.create_locker_buttons()
+        create_locker_buttons(self)
 
         # Create PAY button
-        self.pay_button = tk.Button(self, image=self.pay_image, command=self.process_payment, borderwidth=0, bg="#C3C3C3", activebackground="#C3C3C3", highlightthickness=0)
-        self.pay_button.place(x=140, y=385, width=520, height=70)
+        create_pay_button(self)
+
+
+        # Create custom window control buttons
+        create_close_button(self)
+
 
         # Keyboard listener for Escape key
         self.bind("<Key>", self.keyboard_listener)
 
-    def create_locker_buttons(self):
-        button_specs = [
-            {"size": (170, 170), "pos": (135, 20)},
-            {"size": (80, 80), "pos": (315, 20)},
-            {"size": (80, 80), "pos": (405, 20)},
-            {"size": (80, 80), "pos": (495, 20)},
-            {"size": (80, 80), "pos": (585, 20)},
-            {"size": (80, 80), "pos": (315, 110)},
-            {"size": (80, 80), "pos": (405, 110)},
-            {"size": (80, 80), "pos": (495, 110)},
-            {"size": (80, 80), "pos": (585, 110)},
-            {"size": (170, 170), "pos": (135, 200)},
-            {"size": (170, 170), "pos": (315, 200)},
-            {"size": (170, 170), "pos": (495, 200)}
-        ]
 
-        self.buttons = {}
-        for i, spec in enumerate(button_specs, start=1):
-            locker_id = str(i)
-            status = self.locker_data[locker_id]["status"]
-            button = tk.Button(self, image=self.button_images[i-1], text=str(i), font=("Arial", 18, "bold"), bg="#C3C3C3", activebackground="#C3C3C3", state="disabled" if not status else "normal", borderwidth=0, fg="black", highlightthickness=0, command=lambda i=i: self.select_locker(i))
-            button.place(x=spec["pos"][0], y=spec["pos"][1], width=spec["size"][0], height=spec["size"][1])
-            button.bind("<ButtonPress-1>", self.on_button_press)
-            button.bind("<ButtonRelease-1>", self.on_button_release)
-            self.buttons[i] = button
 
     def select_locker(self, locker_id):
         if self.selected_locker is not None:
@@ -282,13 +273,15 @@ class VendingMachineApp(tk.Tk):
             print("SPI is disabled, skipping SPI commands.")
 
     def on_button_press(self, event):
-        self.press_time = time.time()
+        locker_id = int(event.widget["text"])
+        # Schedule the long press action after 2000 milliseconds (2 seconds)
+        event.widget.long_press_timer = self.after(2000, lambda: self.prompt_admin_options(locker_id))
 
     def on_button_release(self, event):
-        hold_duration = time.time() - self.press_time
-        if hold_duration >= 2:
-            locker_id = int(event.widget["text"])
-            self.prompt_admin_options(locker_id)
+        # Cancel the scheduled long press action if the button is released before 2 seconds
+        if hasattr(event.widget, 'long_press_timer'):
+            self.after_cancel(event.widget.long_press_timer)
+            del event.widget.long_press_timer
 
     def prompt_admin_options(self, locker_id):
         self.check_reader_status_and_reinitialize()
@@ -299,6 +292,7 @@ class VendingMachineApp(tk.Tk):
                 messagebox.showerror("Incorrect PIN", "The PIN entered is incorrect.")
 
         PinEntryWindow(self, pin_callback)
+        
 
     def show_admin_options(self, locker_id):
         """Show admin options for a specific locker."""
@@ -383,6 +377,23 @@ class VendingMachineApp(tk.Tk):
     def keyboard_listener(self, event):
         if event.keysym == 'Escape':
             self.quit()
+
+
+    def start_move(self, event):
+        """Capture the initial position when dragging starts."""
+        self._offsetx = event.x
+        self._offsety = event.y
+
+    def stop_move(self, event):
+        """Reset the offsets when dragging stops."""
+        self._offsetx = 0
+        self._offsety = 0
+
+    def do_move(self, event):
+        """Calculate the new position of the window during dragging."""
+        x = self.winfo_pointerx() - self._offsetx
+        y = self.winfo_pointery() - self._offsety
+        self.geometry(f"+{x}+{y}")
 
 
     def on_close(self):

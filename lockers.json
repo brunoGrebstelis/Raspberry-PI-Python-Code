@@ -94,5 +94,21 @@
         "red": 255,
         "green": 255,
         "blue": 255
+    },
+    "13": {
+        "locker_id": 12,
+        "price": 8.0,
+        "status": true,
+        "red": 255,
+        "green": 255,
+        "blue": 255
+    },
+    "14": {
+        "locker_id": 12,
+        "price": 8.0,
+        "status": true,
+        "red": 255,
+        "green": 255,
+        "blue": 255
     }
 }

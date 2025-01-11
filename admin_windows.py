@@ -12,6 +12,7 @@ class PinEntryWindow(Toplevel):
         self.geometry("300x400")
         self.configure(bg="#F0F0F0")
 
+
         self.timeout = 30000  # Timeout duration in milliseconds
         self.last_interaction = None  # Placeholder for the timeout event
         self.reset_timeout()  # Initialize timeout tracking
@@ -44,6 +45,10 @@ class PinEntryWindow(Toplevel):
 
         # Handle the "X" button
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # Make the window transient and modal
+        self.transient(master)  # Set to be on top of the main window
+        self.grab_set()         # Make it modal
 
     def on_number(self, number):
         self.reset_timeout()  # Reset timeout on user interaction
