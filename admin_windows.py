@@ -4,92 +4,120 @@ from tkinter import messagebox, Toplevel, StringVar, TclError
 
 
 # Pin Entry Window Class
-class PinEntryWindow(Toplevel):
-    def __init__(self, master, callback):
-        super().__init__(master)
+class PinEntryFrame(tk.Frame):
+    def __init__(self, master, callback, timeout=30000):
+        """
+        Initialize the PinEntryFrame.
+
+        :param master: Parent widget.
+        :param callback: Function to call with the entered PIN.
+        :param timeout: Timeout duration in milliseconds (default is 30,000 ms).
+        """
+        super().__init__(master, bg="#F0F0F0")
+        self.master = master
         self.callback = callback
-        self.title("Enter PIN")
-        self.geometry("300x400")
-        self.configure(bg="#F0F0F0")
-
-
-        self.timeout = 30000  # Timeout duration in milliseconds
+        self.timeout = timeout  # Timeout duration in milliseconds
         self.last_interaction = None  # Placeholder for the timeout event
-        self.reset_timeout()  # Initialize timeout tracking
 
-        
-        self.entered_pin = StringVar()
-        entry_display = tk.Entry(self, textvariable=self.entered_pin, font=("Arial", 24), justify="center", show="*")
-        entry_display.grid(row=0, column=0, columnspan=3, pady=10)
+        # Configure grid layout for responsive design
+        self.grid_rowconfigure(0, weight=0)  # For the "X" button
+        self.grid_rowconfigure(1, weight=1)  # For the Entry widget
+        for i in range(2, 7):
+            self.grid_rowconfigure(i, weight=1)
+        for i in range(3):
+            self.grid_columnconfigure(i, weight=1)
 
+        # Create "X" button to close the frame
+        self.close_button = tk.Button(
+            self, text="X", command=self.on_close, font=("Arial", 27, "bold"),
+            bd=0, bg="#F0F0F0", activebackground="#F0F0F0"
+        )
+        self.close_button.grid(row=0, column=2, sticky="ne", padx=20, pady=20)
+        self.close_button.config(width=4, height=2)
+
+        # Create Entry widget for PIN
+        self.entered_pin = tk.StringVar()
+        self.entry_display = tk.Entry(
+            self, textvariable=self.entered_pin, font=("Arial", 54),
+            justify="center", show="*"
+        )
+        self.entry_display.grid(row=1, column=0, columnspan=3, pady=60, padx=90)
+
+        # Create PIN buttons
         buttons = [
-            ('1', 1, 0), ('2', 1, 1), ('3', 1, 2),
-            ('4', 2, 0), ('5', 2, 1), ('6', 2, 2),
-            ('7', 3, 0), ('8', 3, 1), ('9', 3, 2),
-            ('0', 4, 1), ('Enter', 4, 2), ('Clear', 4, 0)
+            ('1', 2, 0), ('2', 2, 1), ('3', 2, 2),
+            ('4', 3, 0), ('5', 3, 1), ('6', 3, 2),
+            ('7', 4, 0), ('8', 4, 1), ('9', 4, 2),
+            ('0', 5, 1), ('Enter', 5, 2), ('Clear', 5, 0)
         ]
-        
+
         for (text, row, col) in buttons:
             if text == "Enter":
-                button = tk.Button(self, text=text, font=("Arial", 18), command=self.on_enter)
+                button = tk.Button(self, text=text, font=("Arial", 27), command=self.on_enter)
             elif text == "Clear":
-                button = tk.Button(self, text=text, font=("Arial", 18), command=self.on_clear)
+                button = tk.Button(self, text=text, font=("Arial", 27), command=self.on_clear)
             else:
-                button = tk.Button(self, text=text, font=("Arial", 18), command=lambda t=text: self.on_number(t))
-            button.grid(row=row, column=col, sticky="nsew", padx=5, pady=5)
-            button.config(width=5, height=2)
+                button = tk.Button(
+                    self, text=text, font=("Arial", 27),
+                    command=lambda t=text: self.on_number(t)
+                )
+            button.grid(row=row, column=col, sticky="nsew", padx=15, pady=15)
+            button.config(width=7, height=3)
 
-        for i in range(5):
-            self.grid_rowconfigure(i, weight=1)
-            self.grid_columnconfigure(i % 3, weight=1)
+        # Bind interactions within the frame to reset the timeout
+        self.entry_display.bind("<Key>", self.reset_timeout)
+        for child in self.winfo_children():
+            if isinstance(child, tk.Button):
+                child.bind("<Button-1>", self.reset_timeout)
 
-        # Handle the "X" button
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
-
-        # Make the window transient and modal
-        self.transient(master)  # Set to be on top of the main window
-        self.grab_set()         # Make it modal
+        self.reset_timeout()
 
     def on_number(self, number):
-        self.reset_timeout()  # Reset timeout on user interaction
+        """Handle number button presses in PIN entry."""
+        self.reset_timeout()
         current_pin = self.entered_pin.get()
         self.entered_pin.set(current_pin + number)
 
     def on_clear(self):
-        self.reset_timeout()  # Reset timeout on user interaction
+        """Clear the entered PIN."""
+        self.reset_timeout()
         self.entered_pin.set("")
 
     def on_enter(self):
+        """Validate the entered PIN and execute the callback."""
+        self.reset_timeout()
         pin = self.entered_pin.get()
         self.callback(pin)
-
-        # Safely destroy without checking the master state
-        try:
-            self.destroy()
-        except TclError as e:
-            print(f"PinEntryWindow destroy error: {e}")
-
+        self.hide()
 
     def on_close(self):
-        """Handle closing the window."""
-        if self.master and hasattr(self.master, '_exit_pin_window'):
-            self.master._exit_pin_window = None  # Clear reference in the master app
-        self.destroy()
+        """Handle closing the frame via the "X" button."""
+        self.hide()
 
+    def show(self):
+        """Display the PinEntryFrame."""
+        self.place(relx=0.5, rely=0.5, anchor="center")
+        self.lift()  # Bring the frame to the front
+        self.focus_set()  # Set focus to the frame
+        self.reset_timeout()  # Initialize/reset the timeout timer
 
-    def reset_timeout(self):
-        """Reset the timeout timer upon user interaction."""
-        if self.last_interaction:  # Cancel any existing timeout event
+    def hide(self):
+        """Hide the PinEntryFrame."""
+        self.place_forget()
+        self.entered_pin.set("")  # Clear the entered PIN
+        if self.last_interaction:
             self.after_cancel(self.last_interaction)
-        # Schedule the next timeout check
+            self.last_interaction = None
+
+    def reset_timeout(self, event=None):
+        """Reset the timeout timer upon user interaction."""
+        if self.last_interaction:
+            self.after_cancel(self.last_interaction)
         self.last_interaction = self.after(self.timeout, self.on_timeout)
 
     def on_timeout(self):
-        """Handle window closure on timeout."""
-        #messagebox.showinfo("Session Expired", "Closing due to inactivity.")
-        if self.master and hasattr(self.master, '_exit_pin_window'):
-            self.master._exit_pin_window = None  # Clear reference in the master app
-        self.destroy()
+        """Handle frame closure on timeout."""
+        self.hide()
 
 
 # Admin Options Window Class

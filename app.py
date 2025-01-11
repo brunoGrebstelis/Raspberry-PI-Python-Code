@@ -3,13 +3,12 @@ import tkinter as tk
 from tkinter import messagebox, TclError
 import time
 import os
-from admin_windows import PinEntryWindow, AdminOptionsWindow, PriceEntryWindow, RGBEntryWindow, PaymentPopup
+from admin_frames import AdminOptionsFrame, PriceEntryFrame, InformationFrame, RGBEntryFrame, PaymentPopupFrame, PinEntryFrame
 from utils import load_locker_data, save_locker_data, send_command, log_event
 from spi_handler import SPIHandler
 from scheduler import Scheduler
 from mdb_handler import MDBHandler
 import threading
-import time
 from gui import (
     size, 
     load_images, 
@@ -26,7 +25,6 @@ class VendingMachineApp(tk.Tk):
 
         # Remove window decorations
         self.overrideredirect(True)
-        self.focus_force()
 
         size(self)
         self.selected_locker = None
@@ -42,9 +40,41 @@ class VendingMachineApp(tk.Tk):
         # Load images 
         load_images(self)
 
-        
+        # Initialize all frames but keep them hidden initially
+        self.pin_entry_frame = PinEntryFrame(self, self.on_pin_success)
+        self.pin_entry_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.pin_entry_frame.hide()
 
-        
+        self.admin_options_frame = AdminOptionsFrame(
+            self, 
+            locker_id=None,  # Will set when showing
+            unlock_callback=self.unlock_locker,
+            price_callback=self.change_price_callback,
+            locker_data=self.locker_data,
+            buttons=None,  # Will set when showing
+            save_callback=save_locker_data,
+            spi_handler=None,  # Will set after SPIHandler initialization
+            close_program_callback=self.on_close
+        )
+        self.admin_options_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.admin_options_frame.hide()
+
+        self.price_entry_frame = PriceEntryFrame(self, locker_id=None, save_price_callback=self.save_price_and_update_spi)
+        self.price_entry_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.price_entry_frame.hide()
+
+        self.rgb_entry_frame = RGBEntryFrame(self, locker_id=None, spi_handler=None)  # Will set spi_handler later
+        self.rgb_entry_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.rgb_entry_frame.hide()
+
+        self.payment_popup_frame = PaymentPopupFrame(self, cancel_callback=self.cancel_transaction)
+        self.payment_popup_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.payment_popup_frame.hide()
+
+        self.information_frame = InformationFrame(self)
+        self.information_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.information_frame.hide()
+
         # SPIHandler initialization with error handling
         try:
             self.spi_handler = SPIHandler(bus=0, device=0, speed_hz=500000)
@@ -52,6 +82,11 @@ class VendingMachineApp(tk.Tk):
             print("SPI initialized successfully.")
             self.transfer_rgb_to_stm32()
             self.transfer_prices_to_stm32()
+
+            # Assign SPI handler to RGBEntryFrame and AdminOptionsFrame
+            self.rgb_entry_frame.spi_handler = self.spi_handler
+            self.admin_options_frame.spi_handler = self.spi_handler
+
         except (ImportError, FileNotFoundError, AttributeError) as e:
             self.spi_handler = None
             self.spi_enabled = False
@@ -59,18 +94,17 @@ class VendingMachineApp(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)  # Ensure SPI is closed on exit
 
-
         self.mdb_handler = MDBHandler(port="/dev/ttyACM0", debug=True)
         try:
             self.mdb_handler.init_serial()
             self.mdb_handler.init_devices()
         except Exception as e:
-            messagebox.showerror("Error", f"MDB Initialization Failed: {e}")
+            #messagebox.showerror("Error", f"MDB Initialization Failed: {e}")
             self.mdb_handler = None
-
 
         # Create custom title bar
         create_title_bar(self)
+
 
 
         # Setup buttons
@@ -79,10 +113,8 @@ class VendingMachineApp(tk.Tk):
         # Create PAY button
         create_pay_button(self)
 
-
         # Create custom window control buttons
         create_close_button(self)
-
 
         # Keyboard listener for Escape key
         self.bind("<Key>", self.keyboard_listener)
@@ -99,7 +131,7 @@ class VendingMachineApp(tk.Tk):
     def process_payment(self):
         """Process payment when the PAY button is clicked."""
         if self.selected_locker is None:
-            messagebox.showwarning("No Selection", "Please select a locker before paying.")
+            #messagebox.showwarning("No Selection", "Please select a locker before paying.")
             return
 
         locker_id = self.selected_locker
@@ -109,7 +141,7 @@ class VendingMachineApp(tk.Tk):
         self.payment_canceled = False
 
         # Step 1: Create the popup in the main thread
-        self.popup = PaymentPopup(self, cancel_callback=self.cancel_transaction)
+        self.payment_popup_frame.show()
 
         def payment_logic():
             """Background thread for payment process."""
@@ -128,7 +160,7 @@ class VendingMachineApp(tk.Tk):
                         print("Card reader reinitialized successfully.")
                 except Exception as reinit_error:
                     print(f"Failed to reinitialize card reader: {reinit_error}")
-                    messagebox.showerror("Reader Disconnected", "Card reader is disconnected or unresponsive.")
+                    #messagebox.showerror("Reader Disconnected", "Card reader is disconnected or unresponsive.")
                     return  # Exit early if reinitialization fails
 
                 print(f"Requesting payment for Locker {locker_id} with Price {price}€...")
@@ -151,7 +183,7 @@ class VendingMachineApp(tk.Tk):
                         elif "d,STATUS,RESULT,-1" in res:  # Canceled by customer
                             print("Payment canceled by the customer.")
                             self.mdb_handler.cancelTransaction()
-                            messagebox.showinfo("Payment Canceled", "Payment was canceled by the customer.")
+                            #messagebox.showinfo("Payment Canceled", "Payment was canceled by the customer.")
                             return
                         elif i == self.mdb_handler.VEND_TIMEOUT - 1:
                             self.mdb_handler.cancelTransaction()
@@ -183,22 +215,21 @@ class VendingMachineApp(tk.Tk):
                         "text": f"Locker {locker_id} purchased for {price}€!"
                     }
                     self.bot_queue.put(message)
+                    self.after(0, self.payment_popup_frame.hide)
                 else:
                     raise ValueError("Payment verification failed. Locker will not be unlocked.")
 
             except (ConnectionError, TimeoutError, ValueError) as e:
                 print(f"Payment Error: {e}")
-                messagebox.showerror("Payment Failed", str(e))
+                #messagebox.showerror("Payment Failed", str(e))
 
             except Exception as e:
                 print(f"Unexpected Error: {e}")
-                messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+                #messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
             finally:
-                # Ensure the popup is closed
-                if hasattr(self, 'popup') and self.popup:
-                    self.popup.destroy()
-                    del self.popup
+                # Ensure the popup is closed if not already
+                self.after(0, self.payment_popup_frame.hide)
                 print("Payment process finished.")
 
         # Step 2: Run the payment logic in a background thread
@@ -220,9 +251,7 @@ class VendingMachineApp(tk.Tk):
                 print(f"Error during transaction cancellation: {e}")
 
         # Close the popup
-        if hasattr(self, 'popup') and self.popup:
-            self.popup.destroy()
-            del self.popup
+        self.after(0, self.payment_popup_frame.hide)
 
         # Signal the payment thread to stop (if running in a thread)
         self.payment_canceled = True
@@ -249,7 +278,7 @@ class VendingMachineApp(tk.Tk):
                         print("Reader reinitialized successfully.")
                     except Exception as e:
                         print(f"Failed to reinitialize the reader: {e}")
-                        messagebox.showerror("Reader Error", "Failed to reinitialize the card reader.")
+                        #messagebox.showerror("Reader Error", "Failed to reinitialize the card reader.")
                 else:
                     print("Reader status is normal or no reset detected.")
 
@@ -284,39 +313,63 @@ class VendingMachineApp(tk.Tk):
             del event.widget.long_press_timer
 
     def prompt_admin_options(self, locker_id):
+        self.selected_locker = locker_id  # Store the selected locker
         self.check_reader_status_and_reinitialize()
-        def pin_callback(pin):
-            if pin == "4671":
-                self.show_admin_options(locker_id)
-            else:
-                messagebox.showerror("Incorrect PIN", "The PIN entered is incorrect.")
+        self.pin_entry_frame.show()
 
-        PinEntryWindow(self, pin_callback)
+    def on_pin_success(self, pin):
+        print(f"Entered PIN: {pin}")  # Debugging statement
+        if self.verify_pin(pin):
+            self.pin_entry_frame.hide()
+            self.show_admin_options()
+        else:
+            #messagebox.showerror("Invalid PIN", "The PIN you entered is incorrect.")
+            self.pin_entry_frame.hide()
+
+
+    def verify_pin(self, pin):
+        # Replace this with your actual PIN verification logic
+        correct_pin = "1234"
+        return pin == correct_pin
+
+
+    def show_frame(self, frame):
+        """Hide all frames and show the specified frame."""
+        frames = [
+            self.pin_entry_frame,
+            self.admin_options_frame,
+            self.price_entry_frame,
+            self.rgb_entry_frame,
+            self.payment_popup_frame,
+            self.information_frame
+        ]
+        for f in frames:
+            f.hide()
+        frame.show()
         
 
-    def show_admin_options(self, locker_id):
-        """Show admin options for a specific locker."""
-        AdminOptionsWindow(
-            self,
-            locker_id=locker_id,
-            unlock_callback=self.unlock_locker,
-            price_callback=self.change_price_callback,
-            locker_data=self.locker_data,
-            buttons=self.buttons,
-            save_callback=save_locker_data,  # Pass the save function as a callback
-            spi_handler=self.spi_handler,
-            close_program_callback = self.on_close
-        )
-
+    def show_admin_options(self):
+        """Show admin options for the selected locker."""
+        locker_id = self.selected_locker
+        print(f"Showing admin options for Locker ID: {locker_id}")  # Debugging
+        if locker_id is not None:
+            # Update admin_options_frame with the selected locker
+            self.admin_options_frame.locker_id = locker_id
+            self.admin_options_frame.buttons = self.buttons  # Pass the locker buttons
+            self.admin_options_frame.show()
+        else:
+            print("No locker selected to show admin options.")
+            print("Error", "No locker selected.")
 
     def change_price_callback(self):
-        """Callback for changing the price of a selected locker."""
-        locker_id = self.selected_locker
-        if locker_id is not None:
-            # Open the price entry window
-            PriceEntryWindow(self, locker_id, self.save_price_and_update_spi)
-        else:
-            messagebox.showwarning("No Locker Selected", "Please select a locker to change its price.")
+            """Callback for changing the price of a selected locker."""
+            locker_id = self.selected_locker
+            if locker_id is not None:
+                # Open the price entry frame
+                self.price_entry_frame.locker_id = locker_id
+                self.price_entry_frame.show(locker_id)
+            else:
+                print("No Locker Selected", "Please select a locker to change its price.")
 
 
 
@@ -336,7 +389,7 @@ class VendingMachineApp(tk.Tk):
         else:
             print("SPI is disabled, skipping SPI commands.")
 
-        messagebox.showinfo("Price Updated", f"Price for Locker {locker_id} set to {new_price:.2f}€")
+        #messagebox.showinfo("Price Updated", f"Price for Locker {locker_id} set to {new_price:.2f}€")
 
 
 
