@@ -49,10 +49,10 @@ class AdminOptionsFrame(tk.Frame):
         self.close_button.config(width=4, height=2)
 
         # Locker options label
-        label = tk.Label(
-            self, text=f"Locker {locker_id} Options", font=("Arial", 36, "bold"), bg="#F0F0F0"
+        self.label = tk.Label(
+            self, text=f"Locker {self.locker_id} Options", font=("Arial", 36, "bold"), bg="#F0F0F0"
         )
-        label.grid(row=1, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
+        self.label.grid(row=1, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
         # Buttons
         buttons = [
@@ -68,7 +68,7 @@ class AdminOptionsFrame(tk.Frame):
                 self, text=text, font=("Arial", 27), command=command
             )
             button.grid(row=idx, column=0, columnspan=2, padx=30, pady=15, sticky="nsew")
-            button.config(width=15, height=3)
+            button.config(width=45, height=3)
 
         # Bind interactions within the frame to reset the timeout
         for child in self.winfo_children():
@@ -116,8 +116,11 @@ class AdminOptionsFrame(tk.Frame):
         """Handle closing the frame via the "X" button."""
         self.hide()
 
-    def show(self):
-        """Display the AdminOptionsFrame."""
+    def show(self, locker_id):
+        """
+        Display the AdminOptionsFrame for a specific locker.
+        """
+        self.set_locker_id(locker_id)
         self.place(relx=0.5, rely=0.5, anchor="center")
         self.lift()
         self.focus_set()
@@ -139,6 +142,13 @@ class AdminOptionsFrame(tk.Frame):
     def on_timeout(self):
         """Handle frame closure on timeout."""
         self.hide()
+
+    def set_locker_id(self, locker_id):
+        """
+        Update the locker ID and refresh the label text.
+        """
+        self.locker_id = locker_id
+        self.label.config(text=f"Locker {self.locker_id} Options")
 
 
 class PriceEntryFrame(tk.Frame):
@@ -380,20 +390,29 @@ class RGBEntryFrame(tk.Frame):
         self.timeout = timeout
         self.last_interaction = None
 
-        # Configure grid
-        self.grid_rowconfigure(0, weight=0)  # For the "X" button
-        for i in range(1, 8):
-            self.grid_rowconfigure(i, weight=1)
-        for j in range(3):
-            self.grid_columnconfigure(j, weight=1)
+        # Prevent frame from resizing based on its content
+        self.pack_propagate(False)
 
-        # "X" button
+        # Configure grid layout to match PinEntryFrame
+        self.grid_rowconfigure(0, weight=0)  # "X" button
+        self.grid_rowconfigure(1, weight=0)  # RGB Labels and Entries
+        for i in range(2, 7):
+            self.grid_rowconfigure(i, weight=1)  # Keypad rows
+        for j in range(3):
+            self.grid_columnconfigure(j, weight=1)  # 3 columns for keypad
+
+        # "X" button to close the frame
         self.close_button = tk.Button(
             self, text="X", command=self.on_close, font=("Arial", 27, "bold"),
             bd=0, bg="#F0F0F0", activebackground="#F0F0F0"
         )
         self.close_button.grid(row=0, column=2, sticky="ne", padx=20, pady=20)
         self.close_button.config(width=4, height=2)
+
+        # Frame for RGB input fields
+        input_frame = tk.Frame(self, bg="#F0F0F0")
+        input_frame.grid(row=1, column=0, columnspan=3, pady=20, padx=40, sticky="nsew")
+        input_frame.grid_columnconfigure(1, weight=1)
 
         # StringVars to hold RGB values
         self.red_value = tk.StringVar()
@@ -402,30 +421,30 @@ class RGBEntryFrame(tk.Frame):
 
         # Create input fields for RGB values
         tk.Label(
-            self, text="Red(0-255):", font=("Arial", 21), bg="#F0F0F0"
-        ).grid(row=1, column=0, pady=15, padx=15, sticky="w")
+            input_frame, text="Red (0-255):", font=("Arial", 27), bg="#F0F0F0"
+        ).grid(row=0, column=0, pady=10, padx=10, sticky="w")
         self.red_entry = tk.Entry(
-            self, textvariable=self.red_value, font=("Arial", 27), justify="center"
+            input_frame, textvariable=self.red_value, font=("Arial", 42), justify="center"
         )
-        self.red_entry.grid(row=1, column=1, columnspan=2, pady=15, padx=15, sticky="nsew")
+        self.red_entry.grid(row=0, column=1, pady=10, padx=10, sticky="ew")
 
         tk.Label(
-            self, text="Green(0-255):", font=("Arial", 21), bg="#F0F0F0"
-        ).grid(row=2, column=0, pady=15, padx=15, sticky="w")
+            input_frame, text="Green (0-255):", font=("Arial", 27), bg="#F0F0F0"
+        ).grid(row=1, column=0, pady=10, padx=10, sticky="w")
         self.green_entry = tk.Entry(
-            self, textvariable=self.green_value, font=("Arial", 27), justify="center"
+            input_frame, textvariable=self.green_value, font=("Arial", 42), justify="center"
         )
-        self.green_entry.grid(row=2, column=1, columnspan=2, pady=15, padx=15, sticky="nsew")
+        self.green_entry.grid(row=1, column=1, pady=10, padx=10, sticky="ew")
 
         tk.Label(
-            self, text="Blue(0-255):", font=("Arial", 21), bg="#F0F0F0"
-        ).grid(row=3, column=0, pady=15, padx=15, sticky="w")
+            input_frame, text="Blue (0-255):", font=("Arial", 27), bg="#F0F0F0"
+        ).grid(row=2, column=0, pady=10, padx=10, sticky="w")
         self.blue_entry = tk.Entry(
-            self, textvariable=self.blue_value, font=("Arial", 27), justify="center"
+            input_frame, textvariable=self.blue_value, font=("Arial", 42), justify="center"
         )
-        self.blue_entry.grid(row=3, column=1, columnspan=2, pady=15, padx=15, sticky="nsew")
+        self.blue_entry.grid(row=2, column=1, pady=10, padx=10, sticky="ew")
 
-        # Numeric keypad and Save button
+        # Create keypad
         self.create_keypad()
 
         # Bind interactions to reset timeout
@@ -437,27 +456,30 @@ class RGBEntryFrame(tk.Frame):
         self.reset_timeout()
 
     def create_keypad(self):
+        """
+        Create a numeric keypad with numbers, Clear, and Save buttons.
+        The layout matches the PinEntryFrame's keypad for consistency.
+        """
         buttons = [
-            ('1', 4, 0), ('2', 4, 1), ('3', 4, 2),
-            ('4', 5, 0), ('5', 5, 1), ('6', 5, 2),
-            ('7', 6, 0), ('8', 6, 1), ('9', 6, 2),
-            ('Clear', 7, 0), ('0', 7, 1), ('Save', 7, 2)
+            ('1', 2, 0), ('2', 2, 1), ('3', 2, 2),
+            ('4', 3, 0), ('5', 3, 1), ('6', 3, 2),
+            ('7', 4, 0), ('8', 4, 1), ('9', 4, 2),
+            ('Clear', 5, 0), ('0', 5, 1), ('Save', 5, 2)
         ]
 
         for (text, row, col) in buttons:
             if text == "Clear":
-                button = tk.Button(
-                    self, text=text, font=("Arial", 21), command=self.clear_inputs
-                )
+                command = self.clear_inputs
             elif text == "Save":
-                button = tk.Button(
-                    self, text=text, font=("Arial", 21), command=self.save_rgb
-                )
+                command = self.save_rgb
             else:
-                button = tk.Button(
-                    self, text=text, font=("Arial", 21),
-                    command=lambda t=text: self.on_number(t)
-                )
+                command = lambda t=text: self.on_number(t)
+
+            button = tk.Button(
+                self, text=text, font=("Arial", 27),
+                command=command, bd=2, relief="raised",
+                bg="#D9D9D9", activebackground="#BEBEBE"
+            )
             button.grid(row=row, column=col, sticky="nsew", padx=15, pady=15)
             button.config(width=7, height=3)
 
@@ -467,13 +489,16 @@ class RGBEntryFrame(tk.Frame):
         focused = self.focus_get()
         if focused == self.red_entry:
             current = self.red_value.get()
-            self.red_value.set(current + number)
+            if len(current) < 3 and number.isdigit():
+                self.red_value.set(current + number)
         elif focused == self.green_entry:
             current = self.green_value.get()
-            self.green_value.set(current + number)
+            if len(current) < 3 and number.isdigit():
+                self.green_value.set(current + number)
         elif focused == self.blue_entry:
             current = self.blue_value.get()
-            self.blue_value.set(current + number)
+            if len(current) < 3 and number.isdigit():
+                self.blue_value.set(current + number)
 
     def clear_inputs(self):
         """Clear all RGB input fields."""
@@ -505,23 +530,28 @@ class RGBEntryFrame(tk.Frame):
                     locker["blue"] = blue
                 self.spi_handler.set_led_color(255, red, green, blue)
             else:  # Update a specific locker
-                locker = lockers[str(self.locker_id)]
-                locker["red"] = red
-                locker["green"] = green
-                locker["blue"] = blue
-                self.spi_handler.set_led_color(self.locker_id, red, green, blue)
+                locker = lockers.get(str(self.locker_id))
+                if locker:
+                    locker["red"] = red
+                    locker["green"] = green
+                    locker["blue"] = blue
+                    self.spi_handler.set_led_color(self.locker_id, red, green, blue)
+                else:
+                    raise KeyError(f"Locker ID {self.locker_id} not found.")
 
             # Save the updated lockers.json file
             with open("lockers.json", "w") as file:
                 json.dump(lockers, file, indent=4)
 
-            print("Success", "RGB values saved successfully.")
+            print("Success: RGB values saved successfully.")
             self.hide()
 
         except ValueError as e:
-            print("Invalid Input", str(e))
+            print(f"Invalid Input: {str(e)}")
+        except KeyError as e:
+            print(f"Error: {str(e)}")
         except Exception as e:
-            print("Error", f"An error occurred: {str(e)}")
+            print(f"Error: An unexpected error occurred: {str(e)}")
 
     def on_close(self):
         """Handle closing the frame via the "X" button."""
@@ -566,7 +596,7 @@ class RGBEntryFrame(tk.Frame):
 
 
 class PaymentPopupFrame(tk.Frame):
-    def __init__(self, master, cancel_callback, timeout=30000):
+    def __init__(self, master, cancel_callback, timeout=40000):
         """
         Initialize the PaymentPopupFrame.
 
@@ -574,55 +604,41 @@ class PaymentPopupFrame(tk.Frame):
         :param cancel_callback: Function to cancel the payment.
         :param timeout: Timeout duration in milliseconds.
         """
-        super().__init__(master, bg="#00AA00")  # Changed to a more visible color
+        super().__init__(master, bg="#1e6039")  # Background color set to #1e6039
         self.master = master
         self.cancel_callback = cancel_callback
         self.timeout = timeout
         self.last_interaction = None
 
         # Configure grid to layout widgets properly
-        self.grid_rowconfigure(0, weight=0)  # For the "X" button
-        self.grid_rowconfigure(1, weight=1)  # For the main message
-        self.grid_rowconfigure(2, weight=0)  # For the "Cancel" button
+        self.grid_rowconfigure(0, weight=1)  # For the main message
         self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
-
-        # "X" button to close the frame
-        self.close_button = tk.Button(
-            self, text="X", command=self.on_cancel, font=("Arial", 24, "bold"),
-            bd=0, bg="#00AA00", activebackground="#008800", fg="white"
-        )
-        self.close_button.grid(row=0, column=1, sticky="ne", padx=10, pady=10)
 
         # Main message label
         self.message_label = tk.Label(
             self,
-            text="Follow the instructions on the terminal.",
-            font=("Arial", 24, "bold"),
-            bg="#00AA00",
-            fg="white",
-            wraplength=400,
+            text="Bitte folgen Sie den Anweisungen im Terminal!",  # Translated to German
+            font=("Arial", 48, "bold"),  # Font size doubled from 24 to 48
+            bg="#1e6039",                # Text background color set to match frame
+            fg="#8bcbb9",                # Text color set to #8bcbb9
+            wraplength=800,              # Wraplength doubled from 400 to 800
             justify="center"
         )
-        self.message_label.grid(row=1, column=0, columnspan=2, padx=20, pady=40)
+        self.message_label.grid(row=0, column=0, padx=40, pady=80)  # Padding adjusted for larger size
 
-        # "Cancel" button
-        self.cancel_button = tk.Button(
-            self, text="Cancel", command=self.on_cancel, font=("Arial", 24),
-            bg="#FF3333", fg="white", activebackground="#CC0000", activeforeground="white"
-        )
-        self.cancel_button.grid(row=2, column=0, columnspan=2, pady=20)
+        # Note on size adjustments
+        # To further adjust the size, modify the 'font' and 'wraplength' parameters above.
+        # For example, to increase the font size, change (Arial, 48, "bold") to a larger size.
+        # Similarly, adjust 'wraplength' to ensure the text fits well within the frame.
 
-        # Bind interactions to reset timeout
-        for child in self.winfo_children():
-            if isinstance(child, tk.Button) or isinstance(child, tk.Label):
-                child.bind("<Button-1>", self.reset_timeout)
+        # Bind interactions to reset timeout (optional, since there are no buttons)
+        self.message_label.bind("<Button-1>", self.reset_timeout)
 
         self.reset_timeout()
 
     def on_cancel(self):
-        """Handle cancellation via the 'X' or 'Cancel' button."""
-        print("PaymentPopupFrame: Cancel button clicked.")  # Debugging
+        """Handle cancellation via the 'cancel_callback'."""
+        print("PaymentPopupFrame: Cancel action triggered.")  # Debugging
         self.cancel_callback()
         self.hide()
 

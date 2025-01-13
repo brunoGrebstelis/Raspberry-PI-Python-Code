@@ -133,6 +133,8 @@ class VendingMachineApp(tk.Tk):
         if self.selected_locker is None:
             #messagebox.showwarning("No Selection", "Please select a locker before paying.")
             return
+        
+        self.pay_button.configure(state="disabled")
 
         locker_id = self.selected_locker
         price = self.locker_data[str(locker_id)]["price"]
@@ -229,6 +231,7 @@ class VendingMachineApp(tk.Tk):
 
             finally:
                 # Ensure the popup is closed if not already
+                self.pay_button.configure(state="normal")
                 self.after(0, self.payment_popup_frame.hide)
                 print("Payment process finished.")
 
@@ -329,7 +332,7 @@ class VendingMachineApp(tk.Tk):
 
     def verify_pin(self, pin):
         # Replace this with your actual PIN verification logic
-        correct_pin = "1234"
+        correct_pin = "4671"
         return pin == correct_pin
 
 
@@ -354,9 +357,9 @@ class VendingMachineApp(tk.Tk):
         print(f"Showing admin options for Locker ID: {locker_id}")  # Debugging
         if locker_id is not None:
             # Update admin_options_frame with the selected locker
-            self.admin_options_frame.locker_id = locker_id
+            #self.admin_options_frame.locker_id = locker_id
             self.admin_options_frame.buttons = self.buttons  # Pass the locker buttons
-            self.admin_options_frame.show()
+            self.admin_options_frame.show(locker_id)
         else:
             print("No locker selected to show admin options.")
             print("Error", "No locker selected.")
