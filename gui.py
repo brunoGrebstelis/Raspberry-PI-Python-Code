@@ -39,7 +39,7 @@ def create_locker_buttons(self):
     for i, spec in enumerate(button_specs, start=1):
         locker_id = str(i)
         status = self.locker_data[locker_id]["status"]
-        button = tk.Button(self, image=self.button_images[i-1], text=str(i), font=("Arial", 18, "bold"), bg="#8bcbb9", activebackground="#8bcbb9", state="disabled" if not status else "normal", borderwidth=0, fg="black", highlightthickness=0, command=lambda i=i: self.select_locker(i))
+        button = tk.Button(self, image=self.button_images[i-1], text=str(i), font=("Arial", 18, "bold"), bg="#8bcbb9", activebackground="#8bcbb9", state="disabled" if not status else "normal", borderwidth=0, fg="black", highlightthickness=0)
         button.place(x=spec["pos"][0], y=spec["pos"][1], width=spec["size"][0], height=spec["size"][1])
         button.bind("<ButtonPress-1>", self.on_button_press)
         button.bind("<ButtonRelease-1>", self.on_button_release)

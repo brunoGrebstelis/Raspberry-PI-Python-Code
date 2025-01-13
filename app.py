@@ -105,7 +105,7 @@ class VendingMachineApp(tk.Tk):
             self.mdb_handler = None
 
         # Create custom title bar
-        create_title_bar(self)
+        #create_title_bar(self)
 
 
 
@@ -116,7 +116,7 @@ class VendingMachineApp(tk.Tk):
         create_pay_button(self)
 
         # Create custom window control buttons
-        create_close_button(self)
+        #create_close_button(self)
 
         # Keyboard listener for Escape key
         self.bind("<Key>", self.keyboard_listener)
@@ -124,10 +124,18 @@ class VendingMachineApp(tk.Tk):
 
 
     def select_locker(self, locker_id):
-        if self.selected_locker is not None:
-            self.buttons[self.selected_locker].config(bg=BG_COLOR, activebackground=BG_COLOR)
+        button = self.buttons.get(locker_id)
+        if not button or button['state'] == 'disabled':
+            print(f"Locker {locker_id} is unavailable.")
+            return
+
+        # Update all buttons: set selected to green, others to default
+        for lid, btn in self.buttons.items():
+            btn.config(bg=GREEN_COLOR if lid == locker_id else BG_COLOR,
+                    activebackground=GREEN_COLOR if lid == locker_id else BG_COLOR)
+
         self.selected_locker = locker_id
-        self.buttons[locker_id].config(bg=GREEN_COLOR, activebackground=GREEN_COLOR)
+        print(f"Locker {locker_id} has been selected.")
 
 
     def process_payment(self):
@@ -308,6 +316,7 @@ class VendingMachineApp(tk.Tk):
 
     def on_button_press(self, event):
         locker_id = int(event.widget["text"])
+        self.select_locker(locker_id)
         # Schedule the long press action after 2000 milliseconds (2 seconds)
         event.widget.long_press_timer = self.after(2000, lambda: self.prompt_admin_options(locker_id))
 
