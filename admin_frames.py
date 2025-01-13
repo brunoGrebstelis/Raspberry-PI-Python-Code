@@ -2,7 +2,7 @@
 import tkinter as tk
 from tkinter import messagebox
 import json
-
+from gui import BG_COLOR, GREEN_COLOR
 class AdminOptionsFrame(tk.Frame):
     def __init__(self, master, locker_id, unlock_callback, price_callback, locker_data, buttons, save_callback, spi_handler, close_program_callback, timeout=60000):
         """
@@ -84,7 +84,7 @@ class AdminOptionsFrame(tk.Frame):
 
         # Mark locker as available and reset button GUI
         self.locker_data[str(self.locker_id)]["status"] = True
-        self.buttons[self.locker_id].config(bg="#C3C3C3", state="normal")  # Reset button
+        self.buttons[self.locker_id].config(bg=BG_COLOR, state="normal")  # Reset button
         self.save_callback(self.locker_data)
 
         self.hide()

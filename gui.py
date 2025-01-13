@@ -2,6 +2,9 @@
 import tkinter as tk
 import os
 
+BG_COLOR = "#8bcbb9"
+GREEN_COLOR = "#1e6039"
+
 def size(self):
     self.title("Vending Machine")
     self.geometry("1920x1200")

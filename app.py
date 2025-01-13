@@ -15,7 +15,9 @@ from gui import (
     create_locker_buttons, 
     create_pay_button,
     create_close_button,
-    create_title_bar
+    create_title_bar,
+    BG_COLOR,
+    GREEN_COLOR
 )
 
 class VendingMachineApp(tk.Tk):
@@ -123,9 +125,9 @@ class VendingMachineApp(tk.Tk):
 
     def select_locker(self, locker_id):
         if self.selected_locker is not None:
-            self.buttons[self.selected_locker].config(bg="#C3C3C3", activebackground="#C3C3C3")
+            self.buttons[self.selected_locker].config(bg=BG_COLOR, activebackground=BG_COLOR)
         self.selected_locker = locker_id
-        self.buttons[locker_id].config(bg="green", activebackground="green")
+        self.buttons[locker_id].config(bg=GREEN_COLOR, activebackground=GREEN_COLOR)
 
 
     def process_payment(self):
@@ -206,7 +208,7 @@ class VendingMachineApp(tk.Tk):
 
                     self.buttons[locker_id].config(state="disabled")
                     self.selected_locker = None
-                    self.buttons[locker_id].config(bg="#C3C3C3", activebackground="#C3C3C3")
+                    self.buttons[locker_id].config(bg=BG_COLOR, activebackground=BG_COLOR)
 
                     self.unlock_locker(locker_id)
                     log_event(locker_id, price)
