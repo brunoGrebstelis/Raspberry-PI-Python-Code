@@ -4,6 +4,7 @@ import os
 
 BG_COLOR = "#8bcbb9"
 GREEN_COLOR = "#1e6039"
+TAG_COLOR = "#b92387"
 
 def size(self):
     self.title("Vending Machine")

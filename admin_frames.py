@@ -2,7 +2,7 @@
 import tkinter as tk
 from tkinter import messagebox
 import json
-from gui import BG_COLOR, GREEN_COLOR
+from gui import BG_COLOR, GREEN_COLOR, TAG_COLOR
 class AdminOptionsFrame(tk.Frame):
     def __init__(self, master, locker_id, unlock_callback, price_callback, locker_data, buttons, save_callback, spi_handler, close_program_callback, timeout=60000):
         """
@@ -373,6 +373,9 @@ class InformationFrame(tk.Frame):
         self.hide()
 
 
+import tkinter as tk
+import json
+
 class RGBEntryFrame(tk.Frame):
     def __init__(self, master, locker_id, spi_handler, timeout=60000):
         """
@@ -393,13 +396,19 @@ class RGBEntryFrame(tk.Frame):
         # Prevent frame from resizing based on its content
         self.pack_propagate(False)
 
-        # Configure grid layout to match PinEntryFrame
-        self.grid_rowconfigure(0, weight=0)  # "X" button
+        # Configure grid layout to match original configuration
+        self.grid_rowconfigure(0, weight=0)  # Title and "X" button
         self.grid_rowconfigure(1, weight=0)  # RGB Labels and Entries
         for i in range(2, 7):
             self.grid_rowconfigure(i, weight=1)  # Keypad rows
         for j in range(3):
             self.grid_columnconfigure(j, weight=1)  # 3 columns for keypad
+
+        # Title label spanning columns 0 and 1
+        self.title_label = tk.Label(
+            self, text="Set RGB Values", font=("Arial", 27, "bold"), bg="#F0F0F0"
+        )
+        self.title_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=20)
 
         # "X" button to close the frame
         self.close_button = tk.Button(
@@ -564,7 +573,8 @@ class RGBEntryFrame(tk.Frame):
             title = "Set RGB for All Lockers"
         else:
             title = f"Set RGB for Locker {locker_id}"
-        # Optionally update a title label if you have one
+        # Update the title label
+        self.title_label.config(text=title)
         self.place(relx=0.5, rely=0.5, anchor="center")
         self.lift()
         self.focus_set()

@@ -17,7 +17,8 @@ from gui import (
     create_close_button,
     create_title_bar,
     BG_COLOR,
-    GREEN_COLOR
+    GREEN_COLOR,
+    TAG_COLOR
 )
 
 class VendingMachineApp(tk.Tk):
@@ -27,6 +28,8 @@ class VendingMachineApp(tk.Tk):
 
         # Remove window decorations
         self.overrideredirect(True)
+
+        self.config(cursor="none")
 
         size(self)
         self.selected_locker = None
@@ -127,30 +130,39 @@ class VendingMachineApp(tk.Tk):
         button = self.buttons.get(locker_id)
         if not button or button['state'] == 'disabled':
             print(f"Locker {locker_id} is unavailable.")
+            self.selected_locker = None
+            for btn in self.buttons.values():
+                btn.config(bg=BG_COLOR, activebackground=BG_COLOR)
             return
 
-        # Update all buttons: set selected to green, others to default
         for lid, btn in self.buttons.items():
-            btn.config(bg=GREEN_COLOR if lid == locker_id else BG_COLOR,
-                    activebackground=GREEN_COLOR if lid == locker_id else BG_COLOR)
+            color = GREEN_COLOR if lid == locker_id else BG_COLOR
+            btn.config(bg=color, activebackground=color)
 
         self.selected_locker = locker_id
         print(f"Locker {locker_id} has been selected.")
 
-
     def process_payment(self):
         """Process payment when the PAY button is clicked."""
-        if self.selected_locker is None:
-            #messagebox.showwarning("No Selection", "Please select a locker before paying.")
-            return
-        
-        self.pay_button.configure(state="disabled")
-
         locker_id = self.selected_locker
         price = self.locker_data[str(locker_id)]["price"]
         product_code = locker_id  # Use locker_id as the product code for vending.
         self.payment_success = False
         self.payment_canceled = False
+
+
+        if self.selected_locker is None:
+            #messagebox.showwarning("No Selection", "Please select a locker before paying.")
+            return
+        
+        button = self.buttons.get(locker_id)
+        if not button or button['state'] == 'disabled':
+            return
+
+        self.pay_button.configure(state="disabled")
+
+
+
 
         # Step 1: Create the popup in the main thread
         self.payment_popup_frame.show()
