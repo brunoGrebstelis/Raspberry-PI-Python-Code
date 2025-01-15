@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import messagebox, TclError
 import time
 import os
-from admin_frames import AdminOptionsFrame, PriceEntryFrame, InformationFrame, RGBEntryFrame, PaymentPopupFrame, PinEntryFrame
+from admin_frames import AdminOptionsFrame, PriceEntryFrame, InformationFrame, RGBEntryFrame, PaymentPopupFrame, PinEntryFrame, SetPinFrame
 from utils import load_locker_data, save_locker_data, send_command, log_event
 from spi_handler import SPIHandler
 from scheduler import Scheduler
@@ -43,7 +43,7 @@ class VendingMachineApp(tk.Tk):
         self.require_exit_pin = False  # Set to False to disable PIN verification on exit
 
         # Load images 
-        load_images(self)
+        load_images(self, tk)
 
         # Initialize all frames but keep them hidden initially
         self.pin_entry_frame = PinEntryFrame(self, self.on_pin_success)
@@ -81,6 +81,15 @@ class VendingMachineApp(tk.Tk):
         self.information_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.information_frame.hide()
 
+
+        self.set_pin_frame = SetPinFrame(
+        master=self,
+        callback=self.handle_lock_order_pin,  # <--- your custom callback
+        timeout=30000
+        )
+        self.set_pin_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.set_pin_frame.hide()
+
         # SPIHandler initialization with error handling
         try:
             self.spi_handler = SPIHandler(bus=0, device=0, speed_hz=500000)
@@ -117,7 +126,7 @@ class VendingMachineApp(tk.Tk):
         create_locker_buttons(self)
 
         # Create PAY button
-        create_pay_button(self)
+        create_pay_button(self, tk)
 
         # Create custom window control buttons
         #create_close_button(self)
@@ -132,16 +141,27 @@ class VendingMachineApp(tk.Tk):
         if not button or button['state'] == 'disabled':
             print(f"Locker {locker_id} is unavailable.")
             self.selected_locker = None
-            for btn in self.buttons.values():
-                btn.config(bg=BG_COLOR, activebackground=BG_COLOR)
+            
+            # Instead of blindly setting ALL buttons to BG_COLOR,
+            # check for locker_pin != -1. Preserve TAG_COLOR if so.
+            for lid, btn in self.buttons.items():
+                locker_pin = self.locker_data[str(lid)].get("locker_pin", -1)
+                color = TAG_COLOR if locker_pin != -1 else BG_COLOR
+                btn.config(bg=color, activebackground=color)
             return
 
+        # Normal flow if the button is enabled
         for lid, btn in self.buttons.items():
-            color = GREEN_COLOR if lid == locker_id else BG_COLOR
+            locker_pin = self.locker_data[str(lid)].get("locker_pin", -1)
+            color = GREEN_COLOR if lid == locker_id else (TAG_COLOR if locker_pin != -1 else BG_COLOR)
             btn.config(bg=color, activebackground=color)
 
         self.selected_locker = locker_id
+        selected_pin = self.locker_data[str(locker_id)].get("locker_pin", -1)
+        self.pay_button.config(image=self.reserved_image if selected_pin != -1 else self.pay_image)
+
         print(f"Locker {locker_id} has been selected.")
+        
 
     def process_payment(self):
         """Process payment when the PAY button is clicked."""
@@ -400,6 +420,35 @@ class VendingMachineApp(tk.Tk):
 
     def lock_order_callback(self):
         print("Lock the order")
+        locker_id = self.selected_locker
+        self.set_pin_frame.show(locker_id, is_first_way=True)
+
+
+    def handle_lock_order_pin(self, locker_id, pin):
+        """
+        The callback for SetPinFrame in the "first way". 
+        Requirements:
+          1) Send a Telegram message about the new lock & pin
+          2) Save the PIN to lockers.json
+          3) Change the button background color to TAG_COLOR
+        """
+
+        # 1) Send a Telegram message
+        message = {
+            "chat_id": None,  # or a known chat ID if you prefer
+            "text": f"Locker {locker_id} locked with PIN {pin}!"
+        }
+        self.bot_queue.put(message)
+
+        # 2) Save the PIN in the locker data, then persist to lockers.json
+        self.locker_data[str(locker_id)]["locker_pin"] = pin
+        save_locker_data(self.locker_data)
+
+        # 3) Change the button background color to TAG_COLOR
+        if locker_id in self.buttons:
+            self.buttons[locker_id].config(bg=TAG_COLOR, activebackground=TAG_COLOR)
+
+        print(f"Lock order completed. Locker {locker_id} now locked with PIN {pin}.")
 
 
 

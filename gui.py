@@ -11,11 +11,13 @@ def size(self):
     self.geometry("1920x1200")
     self.configure(bg="#8bcbb9")
 
-def load_images(self):
+def load_images(self, tk):
     # Load images (assuming they're in an 'img' folder)
     self.pay_image = tk.PhotoImage(file=os.path.join("new", "pay.png"))
+    self.reserved_image = tk.PhotoImage(file=os.path.join("new", "reserved.png"))
     # Load button images
     self.button_images = [tk.PhotoImage(file=os.path.join("new", f"button{i}.png")) for i in range(1, 15)]
+
 
 
 def create_locker_buttons(self):
@@ -46,7 +48,7 @@ def create_locker_buttons(self):
         button.bind("<ButtonRelease-1>", self.on_button_release)
         self.buttons[i] = button
 
-def create_pay_button(self):
+def create_pay_button(self, tk):
     self.pay_button = tk.Button(self, image=self.pay_image, command=self.process_payment, borderwidth=0, bg="#8bcbb9", activebackground="#8bcbb9", highlightthickness=0)
     self.pay_button.place(x=195, y=985, width=1530, height=150)
 
