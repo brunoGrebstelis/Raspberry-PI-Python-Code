@@ -3,8 +3,22 @@ import tkinter as tk
 from tkinter import messagebox
 import json
 from gui import BG_COLOR, GREEN_COLOR, TAG_COLOR
+
 class AdminOptionsFrame(tk.Frame):
-    def __init__(self, master, locker_id, unlock_callback, price_callback, locker_data, buttons, save_callback, spi_handler, close_program_callback, timeout=60000):
+    def __init__(
+            self, 
+            master, 
+            locker_id, 
+            unlock_callback, 
+            price_callback, 
+            locker_data, 
+            buttons, 
+            save_callback, 
+            spi_handler, 
+            close_program_callback, 
+            lock_order_callback,   # <-- NEW CALLBACK PARAMETER
+            timeout=60000
+    ):
         """
         Initialize the AdminOptionsFrame.
 
@@ -17,6 +31,7 @@ class AdminOptionsFrame(tk.Frame):
         :param save_callback: Function to save locker data.
         :param spi_handler: SPI handler object.
         :param close_program_callback: Function to close the program.
+        :param lock_order_callback: Function to lock the order (NEW).
         :param timeout: Timeout duration in milliseconds.
         """
         super().__init__(master, bg="#F0F0F0")
@@ -29,6 +44,7 @@ class AdminOptionsFrame(tk.Frame):
         self.save_callback = save_callback
         self.spi_handler = spi_handler
         self.close_program_callback = close_program_callback
+        self.lock_order_callback = lock_order_callback  # <-- STORE THE NEW CALLBACK
         self.timeout = timeout
         self.last_interaction = None
 
@@ -55,15 +71,16 @@ class AdminOptionsFrame(tk.Frame):
         self.label.grid(row=1, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
         # Buttons
-        buttons = [
+        admin_buttons = [
             ("Unlock Locker", self.on_unlock),
             ("Change Price", self.on_change_price),
             ("Change Color", self.on_change_color),
             ("Change All Colors", self.on_change_all_color),
-            ("Close Program", self.on_close_program)
+            ("Lock the order", self.on_lock_order),  # <-- NEW BUTTON
+            ("Close Program", self.on_close_program)        
         ]
 
-        for idx, (text, command) in enumerate(buttons, start=2):
+        for idx, (text, command) in enumerate(admin_buttons, start=2):
             button = tk.Button(
                 self, text=text, font=("Arial", 27), command=command
             )
@@ -112,8 +129,14 @@ class AdminOptionsFrame(tk.Frame):
         self.reset_timeout()
         self.close_program_callback()
 
+    def on_lock_order(self):
+        """Handle locking the order (NEW)."""
+        self.reset_timeout()
+        self.lock_order_callback()  # <-- CALL THE NEW CALLBACK
+        self.hide()
+
     def on_close(self):
-        """Handle closing the frame via the "X" button."""
+        """Handle closing the frame via the 'X' button."""
         self.hide()
 
     def show(self, locker_id):

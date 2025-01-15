@@ -59,7 +59,8 @@ class VendingMachineApp(tk.Tk):
             buttons=None,  # Will set when showing
             save_callback=save_locker_data,
             spi_handler=None,  # Will set after SPIHandler initialization
-            close_program_callback=self.on_close
+            close_program_callback=self.on_close,
+            lock_order_callback=self.lock_order_callback
         )
         self.admin_options_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.admin_options_frame.hide()
@@ -396,6 +397,9 @@ class VendingMachineApp(tk.Tk):
                 self.price_entry_frame.show(locker_id)
             else:
                 print("No Locker Selected", "Please select a locker to change its price.")
+
+    def lock_order_callback(self):
+        print("Lock the order")
 
 
 
