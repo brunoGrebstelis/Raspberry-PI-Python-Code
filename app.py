@@ -60,7 +60,8 @@ class VendingMachineApp(tk.Tk):
             save_callback=save_locker_data,
             spi_handler=None,  # Will set after SPIHandler initialization
             close_program_callback=self.on_close,
-            lock_order_callback=self.lock_order_callback
+            lock_order_callback=self.lock_order_callback,
+            cancel_order_callback=self.cancel_order_callback
         )
         self.admin_options_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.admin_options_frame.hide()
@@ -166,24 +167,75 @@ class VendingMachineApp(tk.Tk):
     def process_payment(self):
         """Process payment when the PAY button is clicked."""
         locker_id = self.selected_locker
+        # ================= NEW LOGIC START =================
+        # 1) Check if the locker is reserved (locker_pin != -1)
+        if locker_id is None:
+            return
+
+        locker_pin = self.locker_data[str(locker_id)].get("locker_pin", -1)
+        if locker_pin != -1:
+            print(f"Locker {locker_id} is reserved. Asking user for PIN (second way)...")
+            # Show the pin frame in blocking mode => returns the entered pin
+            pin_entered = self.set_pin_frame.show_and_get_pin(locker_id)
+            if pin_entered != locker_pin:
+                print("Incorrect PIN or user canceled => abort payment.")
+                return
+            print("Reserved pin is correct. Continuing with payment flow...")
+        # ================= NEW LOGIC END ===================
+
         price = self.locker_data[str(locker_id)]["price"]
         product_code = locker_id  # Use locker_id as the product code for vending.
         self.payment_success = False
         self.payment_canceled = False
 
-
         if self.selected_locker is None:
-            #messagebox.showwarning("No Selection", "Please select a locker before paying.")
             return
-        
+
         button = self.buttons.get(locker_id)
         if not button or button['state'] == 'disabled':
             return
 
         self.pay_button.configure(state="disabled")
 
+        # ================= NEW LOGIC: Zero-price shortcut =================
+        if price == 0:
+            print("Price is 0. Skipping MDB payment flow and unlocking locker immediately.")
+            self.payment_success = True  # Emulate success
+
+            print("Payment successful. Updating locker status...")
+            self.locker_data[str(locker_id)]["status"] = False  # Unavailable
+            save_locker_data(self.locker_data)
+
+            self.buttons[locker_id].config(state="disabled")
+            self.selected_locker = None
+            self.buttons[locker_id].config(bg=BG_COLOR, activebackground=BG_COLOR)
+
+            # Also set price to 10
+            self.save_price_and_update_spi(locker_id, 50.0)
+            time.sleep(0.05)
+
+            self.unlock_locker(locker_id)
+            log_event(locker_id, price)
+
+            # If pinned => revert to -1 => revert pay button image
+            if locker_pin != -1:
+                self.locker_data[str(locker_id)]["locker_pin"] = -1
+                save_locker_data(self.locker_data)
+                self.pay_button.config(image=self.pay_image)
 
 
+            # Send Telegram message
+            message = {
+                "chat_id": None,
+                "text": f"Locker {locker_id} purchased for {price}€!"
+            }
+            self.bot_queue.put(message)
+
+            # Re-enable pay button + hide popup
+            self.pay_button.configure(state="normal")
+            self.payment_popup_frame.hide()
+            return
+        # ================= END ZERO-PRICE LOGIC ===========================
 
         # Step 1: Create the popup in the main thread
         self.payment_popup_frame.show()
@@ -205,7 +257,6 @@ class VendingMachineApp(tk.Tk):
                         print("Card reader reinitialized successfully.")
                 except Exception as reinit_error:
                     print(f"Failed to reinitialize card reader: {reinit_error}")
-                    #messagebox.showerror("Reader Disconnected", "Card reader is disconnected or unresponsive.")
                     return  # Exit early if reinitialization fails
 
                 print(f"Requesting payment for Locker {locker_id} with Price {price}€...")
@@ -215,7 +266,7 @@ class VendingMachineApp(tk.Tk):
                 if direct_vend:
                     print("Direct Vend detected. Waiting for transaction confirmation...")
                     for i in range(self.mdb_handler.VEND_TIMEOUT):
-                        if self.payment_canceled:  # Check if the user canceled
+                        if self.payment_canceled:
                             print("Payment process canceled.")
                             return
 
@@ -228,7 +279,6 @@ class VendingMachineApp(tk.Tk):
                         elif "d,STATUS,RESULT,-1" in res:  # Canceled by customer
                             print("Payment canceled by the customer.")
                             self.mdb_handler.cancelTransaction()
-                            #messagebox.showinfo("Payment Canceled", "Payment was canceled by the customer.")
                             return
                         elif i == self.mdb_handler.VEND_TIMEOUT - 1:
                             self.mdb_handler.cancelTransaction()
@@ -253,10 +303,15 @@ class VendingMachineApp(tk.Tk):
 
                     self.unlock_locker(locker_id)
                     log_event(locker_id, price)
-                    #messagebox.showinfo("Success", f"Locker {locker_id} unlocked successfully!")
-                            # We can send a message to the queue
+
+                    # NEW: If pinned, revert pin => set pay button image
+                    if locker_pin != -1:
+                        self.locker_data[str(locker_id)]["locker_pin"] = -1
+                        save_locker_data(self.locker_data)
+                        self.pay_button.config(image=self.pay_image)
+
                     message = {
-                        "chat_id": None,  # or a known chat ID if you prefer
+                        "chat_id": None,
                         "text": f"Locker {locker_id} purchased for {price}€!"
                     }
                     self.bot_queue.put(message)
@@ -266,11 +321,9 @@ class VendingMachineApp(tk.Tk):
 
             except (ConnectionError, TimeoutError, ValueError) as e:
                 print(f"Payment Error: {e}")
-                #messagebox.showerror("Payment Failed", str(e))
 
             except Exception as e:
                 print(f"Unexpected Error: {e}")
-                #messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
             finally:
                 # Ensure the popup is closed if not already
@@ -280,7 +333,6 @@ class VendingMachineApp(tk.Tk):
 
         # Step 2: Run the payment logic in a background thread
         threading.Thread(target=payment_logic, daemon=True).start()
-
 
 
 
@@ -451,6 +503,20 @@ class VendingMachineApp(tk.Tk):
         print(f"Lock order completed. Locker {locker_id} now locked with PIN {pin}.")
 
 
+    def cancel_order_callback(self, locker_id):
+        locker_pin = self.locker_data[str(locker_id)].get("locker_pin", -1)
+        price = self.locker_data[str(locker_id)]["price"]
+        if locker_pin != -1:
+            if price == 0:
+                self.save_price_and_update_spi(locker_id, 50.0)
+                time.sleep(0.05)
+            self.locker_data[str(locker_id)]["locker_pin"] = -1
+            save_locker_data(self.locker_data)
+            self.pay_button.config(image=self.pay_image)
+            button = self.buttons.get(locker_id)
+            button.config(bg=BG_COLOR, activebackground=BG_COLOR)
+
+
 
     def save_price_and_update_spi(self, locker_id, new_price):
         """
@@ -465,6 +531,7 @@ class VendingMachineApp(tk.Tk):
         # Send the new price to STM32
         if self.spi_enabled:
             self.spi_handler.set_price(locker_number=locker_id, price=new_price)
+            time.sleep(0.05)
         else:
             print("SPI is disabled, skipping SPI commands.")
 

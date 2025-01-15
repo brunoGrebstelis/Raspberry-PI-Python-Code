@@ -17,6 +17,7 @@ class AdminOptionsFrame(tk.Frame):
             spi_handler, 
             close_program_callback, 
             lock_order_callback,   # <-- NEW CALLBACK PARAMETER
+            cancel_order_callback,
             timeout=60000
     ):
         """
@@ -45,6 +46,7 @@ class AdminOptionsFrame(tk.Frame):
         self.spi_handler = spi_handler
         self.close_program_callback = close_program_callback
         self.lock_order_callback = lock_order_callback  # <-- STORE THE NEW CALLBACK
+        self.cancel_order_callback = cancel_order_callback
         self.timeout = timeout
         self.last_interaction = None
 
@@ -148,6 +150,7 @@ class AdminOptionsFrame(tk.Frame):
         self.lift()
         self.focus_set()
         self.reset_timeout()
+        self.cancel_order_callback(locker_id)
 
     def hide(self):
         """Hide the AdminOptionsFrame."""
@@ -823,40 +826,39 @@ class PinEntryFrame(tk.Frame):
 
 class SetPinFrame(tk.Frame):
     """
-    A frame for setting a 6-digit PIN. If the user enters fewer or more than 6 digits
-    upon pressing Enter, the entire application closes. Otherwise, the callback is 
-    invoked (or a simple print() for the second "way").
-    If the user tries to enter a 7th digit, the PIN is cleared.
+    A frame for entering a 6-digit PIN in two modes:
+      1) is_first_way=True => calls a callback (handle_lock_order_pin)
+      2) is_first_way=False => returns the entered pin to the caller (reserved locker scenario)
     """
 
-    def __init__(self, master, callback, timeout=30000):
+    def __init__(self, master, callback=None, timeout=30000):
         """
-        Initialize the SetPinFrame.
-
-        :param master: Parent widget.
-        :param callback: Function to call with the entered PIN and locker ID.
-        :param timeout: Timeout duration in milliseconds (default is 30,000 ms).
+        :param master: The main application (VendingMachineApp).
+        :param callback: The function to call if is_first_way=True. 
+                         e.g. handle_lock_order_pin(locker_id, pin).
+        :param timeout: Timeout for user inactivity in ms.
         """
         super().__init__(master, bg="#F0F0F0")
         self.master = master
         self.callback = callback
-        self.timeout = timeout  # Timeout duration in milliseconds
-        self.last_interaction = None  # Placeholder for the timeout event
+        self.timeout = timeout
+        self.last_interaction = None
 
-        # We'll store the locker_id and a flag for "first way" vs. "second way" usage
+        # For storing state
         self.locker_id = None
-        self.is_first_way = True  # By default, we assume "first way"
+        self.is_first_way = True
+        self.result_var = None  # used to return the pin if is_first_way=False
 
-        # Configure grid layout for responsive design
-        self.grid_rowconfigure(0, weight=0)  # For the "X" button
-        self.grid_rowconfigure(1, weight=0)  # For the title label
-        self.grid_rowconfigure(2, weight=1)  # For the Entry widget
+        # Grid layout
+        self.grid_rowconfigure(0, weight=0)  # "X" button
+        self.grid_rowconfigure(1, weight=0)  # Title
+        self.grid_rowconfigure(2, weight=1)  # PIN entry
         for i in range(3, 8):
             self.grid_rowconfigure(i, weight=1)
-        for i in range(3):
-            self.grid_columnconfigure(i, weight=1)
+        for j in range(3):
+            self.grid_columnconfigure(j, weight=1)
 
-        # Create "X" button to close the frame
+        # "X" button
         self.close_button = tk.Button(
             self, text="X", command=self.on_close, font=("Arial", 27, "bold"),
             bd=0, bg="#F0F0F0", activebackground="#F0F0F0"
@@ -864,13 +866,13 @@ class SetPinFrame(tk.Frame):
         self.close_button.grid(row=0, column=2, sticky="ne", padx=20, pady=20)
         self.close_button.config(width=4, height=2)
 
-        # Title label: "Enter 6 digit pin"
+        # Title label
         self.title_label = tk.Label(
             self, text="Enter 6 digit pin", font=("Arial", 36, "bold"), bg="#F0F0F0"
         )
         self.title_label.grid(row=1, column=0, columnspan=3, pady=10)
 
-        # Create Entry widget for PIN
+        # PIN entry
         self.entered_pin = tk.StringVar()
         self.entry_display = tk.Entry(
             self, textvariable=self.entered_pin, font=("Arial", 54),
@@ -878,28 +880,27 @@ class SetPinFrame(tk.Frame):
         )
         self.entry_display.grid(row=2, column=0, columnspan=3, pady=30, padx=90)
 
-        # Create numeric keypad buttons
+        # Numeric keypad
         buttons = [
             ('1', 3, 0), ('2', 3, 1), ('3', 3, 2),
             ('4', 4, 0), ('5', 4, 1), ('6', 4, 2),
             ('7', 5, 0), ('8', 5, 1), ('9', 5, 2),
             ('0', 6, 1), ('Enter', 6, 2), ('Clear', 6, 0)
         ]
-
         for (text, row, col) in buttons:
             if text == "Enter":
-                button = tk.Button(self, text=text, font=("Arial", 27), command=self.on_enter)
+                btn = tk.Button(self, text=text, font=("Arial", 27), command=self.on_enter)
             elif text == "Clear":
-                button = tk.Button(self, text=text, font=("Arial", 27), command=self.on_clear)
+                btn = tk.Button(self, text=text, font=("Arial", 27), command=self.on_clear)
             else:
-                button = tk.Button(
+                btn = tk.Button(
                     self, text=text, font=("Arial", 27),
                     command=lambda t=text: self.on_number(t)
                 )
-            button.grid(row=row, column=col, sticky="nsew", padx=15, pady=15)
-            button.config(width=7, height=3)
+            btn.grid(row=row, column=col, sticky="nsew", padx=15, pady=15)
+            btn.config(width=7, height=3)
 
-        # Bind interactions to reset the timeout
+        # Bind to reset timeout
         self.entry_display.bind("<Key>", self.reset_timeout)
         for child in self.winfo_children():
             if isinstance(child, tk.Button):
@@ -908,77 +909,99 @@ class SetPinFrame(tk.Frame):
         self.reset_timeout()
 
     def on_number(self, number):
-        """Handle number button presses in PIN entry."""
+        """If 7th digit => clear everything."""
         self.reset_timeout()
         current_pin = self.entered_pin.get()
-
-        # -----------------------------------------------------------
-        # CHANGE: If user tries to enter a 7th digit, clear everything.
-        # -----------------------------------------------------------
         if len(current_pin) == 6:
-            self.entered_pin.set("")  # Just clear if the 7th digit is attempted
+            self.entered_pin.set("")
             return
-
         self.entered_pin.set(current_pin + number)
 
     def on_clear(self):
-        """Clear the entered PIN."""
+        """Clear the PIN."""
         self.reset_timeout()
         self.entered_pin.set("")
 
     def on_enter(self):
         """
-        If the PIN is exactly 6 digits:
-          - If self.is_first_way is True, call self.callback(self.locker_id, pin).
-          - Otherwise, just print() for now.
-
-        If the PIN length != 6, close the entire application.
+        If exactly 6 digits:
+          - is_first_way=True => calls self.callback(locker_id, pin).
+          - is_first_way=False => sets result_var => unblocks show_and_get_pin
+        Else => close entire app.
         """
         self.reset_timeout()
         pin = self.entered_pin.get()
-
         if len(pin) != 6:
-            self.master.on_close()  # or self.master.destroy() to close the entire app
+            # Not 6 => close entire app
+            self.on_clear()
             return
 
         if self.is_first_way:
-            self.callback(self.locker_id, pin)
+            # "First way" => callback approach
+            if self.callback:
+                self.callback(self.locker_id, pin)
         else:
-            print(f"SetPinFrame was called in second way. PIN = {pin}")
-
+            # "Second way" => return PIN to the caller
+            self.result_var.set(pin)
         self.hide()
 
     def on_close(self):
-        """Handle closing the frame via the 'X' button."""
+        """User clicked X => hide + set result to "" if second way."""
+        if not self.is_first_way and self.result_var:
+            self.result_var.set("")  # means "cancel"
         self.hide()
 
     def show(self, locker_id, is_first_way=True):
         """
-        Display the SetPinFrame for a given locker_id.
-        :param locker_id: The ID of the locker to which the PIN applies.
-        :param is_first_way: Flag that determines if we call self.callback or just print().
+        Non-blocking version. If first way => calls callback on success,
+        if second way => does no callback.
         """
         self.locker_id = locker_id
         self.is_first_way = is_first_way
+        self.entered_pin.set("")
         self.place(relx=0.5, rely=0.5, anchor="center")
-        self.lift()      # Bring the frame to the front
-        self.focus_set() # Set focus to the frame
-        self.reset_timeout()  # Initialize/reset the timeout timer
+        self.lift()
+        self.focus_set()
+        self.reset_timeout()
+
+    def show_and_get_pin(self, locker_id):
+        """
+        A blocking approach => returns pin or None.
+        This is for "second way" usage.
+        """
+        self.locker_id = locker_id
+        self.is_first_way = False
+        self.entered_pin.set("")
+        self.result_var = tk.StringVar(value="")  # empty means not done
+
+        # Show frame
+        self.place(relx=0.5, rely=0.5, anchor="center")
+        self.lift()
+        self.focus_set()
+        self.reset_timeout()
+
+        # Block
+        self.wait_variable(self.result_var)
+
+        # Once unblocked => read
+        final_pin = self.result_var.get()  # could be "" or 6-digit
+        self.hide()
+
+        return final_pin if final_pin else None
 
     def hide(self):
-        """Hide the SetPinFrame."""
+        """Hide the frame."""
         self.place_forget()
-        self.entered_pin.set("")  # Clear the entered PIN
+        self.entered_pin.set("")
         if self.last_interaction:
             self.after_cancel(self.last_interaction)
             self.last_interaction = None
 
     def reset_timeout(self, event=None):
-        """Reset the timeout timer upon user interaction."""
         if self.last_interaction:
             self.after_cancel(self.last_interaction)
         self.last_interaction = self.after(self.timeout, self.on_timeout)
 
     def on_timeout(self):
-        """Handle frame closure on timeout."""
-        self.hide()
+        """Timeout => same as closing => hide + set "" if second way."""
+        self.on_close()
