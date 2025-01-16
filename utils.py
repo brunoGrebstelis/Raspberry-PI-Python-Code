@@ -499,6 +499,7 @@ def generate_locker_info():
     Loads lockers.json and returns a beautifully formatted string listing each locker.
     🟢 = Locker with a flower inside
     🔴 = Empty locker
+    🟡 = Reserved locker
     """
     data = load_locker_data()  # This function is already in utils.py
     lines = ["🔓 *Locker Status:*"]
@@ -506,15 +507,22 @@ def generate_locker_info():
     for locker_id_str, locker_dict in data.items():
         price = locker_dict.get("price", 0)
         status = locker_dict.get("status", True)
+        locker_pin = locker_dict.get("locker_pin", -1)
 
-        if status:
-            # Locker with a flower inside
-            lines.append(f"🟢 Locker {locker_id_str}: {price}€ (Full)")
+        if locker_pin != -1:
+            # Locker is reserved
+            lines.append(f"🟡 Locker {locker_id_str}: {price}€ (Reserved)")
         else:
-            # Empty locker
-            lines.append(f"🔴 Locker {locker_id_str}: {price}€ (Empty)")
+            # Follow the original logic for status
+            if status:
+                # Locker has a flower
+                lines.append(f"🟢 Locker {locker_id_str}: {price}€ (Full)")
+            else:
+                # Locker is empty
+                lines.append(f"🔴 Locker {locker_id_str}: {price}€ (Empty)")
 
     return "\n".join(lines)
+
 
 
 
