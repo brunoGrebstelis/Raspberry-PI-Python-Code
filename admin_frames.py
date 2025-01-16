@@ -402,6 +402,36 @@ class InformationFrame(tk.Frame):
 import tkinter as tk
 import json
 
+def gamma_correct(value, gamma=2.2):
+    """
+    Apply gamma correction to a single 0-255 channel value.
+    Returns an int in the range [0..255].
+    """
+    # Avoid zero-based edge case in exponent
+    # but if you want to allow pure 0, remove the max(0, ...) line.
+    corrected = (value / 255.0) ** (1.0 / gamma)
+    return int(round(corrected * 255))
+
+def rgb_to_hex(r, g, b, gamma=2.2):
+    """
+    Convert (r,g,b) to a gamma-corrected hex string.
+    Ensures we never display pure black in case the LED cannot do that.
+    """
+    # If truly (0,0,0), we force (1,1,1) to avoid a fully black display
+    if r == 0 and g == 0 and b == 0:
+        r, g, b = 1, 1, 1
+
+    # Gamma-correct each channel
+    r_g = gamma_correct(r, gamma)
+    g_g = gamma_correct(g, gamma)
+    b_g = gamma_correct(b, gamma)
+
+    # Also ensure we never see fully black on the GUI
+    if r_g == 0 and g_g == 0 and b_g == 0:
+        r_g, g_g, b_g = 1, 1, 1
+
+    return f"#{r_g:02x}{g_g:02x}{b_g:02x}"
+
 class RGBEntryFrame(tk.Frame):
     def __init__(self, master, locker_id, spi_handler, timeout=60000):
         """
@@ -422,74 +452,235 @@ class RGBEntryFrame(tk.Frame):
         # Prevent frame from resizing based on its content
         self.pack_propagate(False)
 
-        # Configure grid layout to match original configuration
-        self.grid_rowconfigure(0, weight=0)  # Title and "X" button
-        self.grid_rowconfigure(1, weight=0)  # RGB Labels and Entries
+        # Configure grid layout (closely matching original)
+        self.grid_rowconfigure(0, weight=0)  # Title + default color buttons + "X"
+        self.grid_rowconfigure(1, weight=0)  # R, G, B row
         for i in range(2, 7):
             self.grid_rowconfigure(i, weight=1)  # Keypad rows
         for j in range(3):
             self.grid_columnconfigure(j, weight=1)  # 3 columns for keypad
 
-        # Title label spanning columns 0 and 1
-        self.title_label = tk.Label(
-            self, text="Set RGB Values", font=("Arial", 27, "bold"), bg="#F0F0F0"
-        )
-        self.title_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=20)
+        # ---------- Top row (Title, Default Color Buttons, "X") ----------
+        top_frame = tk.Frame(self, bg="#F0F0F0")
+        top_frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=20, pady=20)
+        top_frame.grid_columnconfigure(0, weight=0)  # Title
+        top_frame.grid_columnconfigure(1, weight=1)  # Preset color buttons
+        top_frame.grid_columnconfigure(2, weight=0)  # "X" button
 
-        # "X" button to close the frame
-        self.close_button = tk.Button(
-            self, text="X", command=self.on_close, font=("Arial", 27, "bold"),
-            bd=0, bg="#F0F0F0", activebackground="#F0F0F0"
+        # Title label in column 0
+        self.title_label = tk.Label(
+            top_frame,
+            text="RGB for Locker",
+            font=("Arial", 27, "bold"),
+            bg="#F0F0F0"
         )
-        self.close_button.grid(row=0, column=2, sticky="ne", padx=20, pady=20)
+        self.title_label.grid(row=0, column=0, sticky="w")
+
+        # Frame to hold default color buttons in column 1
+        preset_frame = tk.Frame(top_frame, bg="#F0F0F0")
+        preset_frame.grid(row=0, column=1, sticky="e")
+
+        # "X" button in column 2
+        self.close_button = tk.Button(
+            top_frame,
+            text="X",
+            command=self.on_close,
+            font=("Arial", 27, "bold"),
+            bd=0,
+            bg="#F0F0F0",
+            activebackground="#F0F0F0"
+        )
+        self.close_button.grid(row=0, column=2, sticky="e")
         self.close_button.config(width=4, height=2)
 
-        # Frame for RGB input fields
+        # ---------- Frame for R, G, B (Labels, Entries, Scales) ----------
         input_frame = tk.Frame(self, bg="#F0F0F0")
-        input_frame.grid(row=1, column=0, columnspan=3, pady=20, padx=40, sticky="nsew")
-        input_frame.grid_columnconfigure(1, weight=1)
+        input_frame.grid(row=1, column=0, columnspan=3, pady=10, padx=40, sticky="nsew")
+
+        # Let column 2 stretch so the Scale can fill horizontally
+        input_frame.grid_columnconfigure(2, weight=1)
 
         # StringVars to hold RGB values
         self.red_value = tk.StringVar()
         self.green_value = tk.StringVar()
         self.blue_value = tk.StringVar()
 
-        # Create input fields for RGB values
+        # --------------------- R label + entry + scale ---------------------
         tk.Label(
-            input_frame, text="Red (0-255):", font=("Arial", 27), bg="#F0F0F0"
-        ).grid(row=0, column=0, pady=10, padx=10, sticky="w")
+            input_frame, text="R:", font=("Arial", 27), bg="#F0F0F0"
+        ).grid(row=0, column=0, sticky="w")
+
         self.red_entry = tk.Entry(
-            input_frame, textvariable=self.red_value, font=("Arial", 42), justify="center"
+            input_frame,
+            textvariable=self.red_value,
+            font=("Arial", 42),
+            justify="center",
+            width=3
         )
-        self.red_entry.grid(row=0, column=1, pady=10, padx=10, sticky="ew")
+        self.red_entry.grid(row=0, column=1, sticky="w", padx=(10, 20))
 
+        # Bind focus-in and focus-out for clearing/clamping
+        self.red_entry.bind("<FocusIn>", self.on_entry_focus_in)
+        self.red_entry.bind("<FocusOut>", self.on_entry_focus_out)
+
+        self.red_scale = tk.Scale(
+            input_frame,
+            from_=0, to=255,
+            orient="horizontal",
+            command=self.on_red_scale,
+            troughcolor="white",
+            bg="#F0F0F0",
+            width=40,       # thickness of the trough
+            sliderlength=40 # length of the slider
+        )
+        self.red_scale.config(fg="red", highlightthickness=0)
+        self.red_scale.grid(row=0, column=2, sticky="ew", padx=(0, 20))
+
+        # -------------------- G label + entry + scale ----------------------
         tk.Label(
-            input_frame, text="Green (0-255):", font=("Arial", 27), bg="#F0F0F0"
-        ).grid(row=1, column=0, pady=10, padx=10, sticky="w")
+            input_frame, text="G:", font=("Arial", 27), bg="#F0F0F0"
+        ).grid(row=1, column=0, sticky="w")
+
         self.green_entry = tk.Entry(
-            input_frame, textvariable=self.green_value, font=("Arial", 42), justify="center"
+            input_frame,
+            textvariable=self.green_value,
+            font=("Arial", 42),
+            justify="center",
+            width=3
         )
-        self.green_entry.grid(row=1, column=1, pady=10, padx=10, sticky="ew")
+        self.green_entry.grid(row=1, column=1, sticky="w", padx=(10, 20))
 
-        tk.Label(
-            input_frame, text="Blue (0-255):", font=("Arial", 27), bg="#F0F0F0"
-        ).grid(row=2, column=0, pady=10, padx=10, sticky="w")
-        self.blue_entry = tk.Entry(
-            input_frame, textvariable=self.blue_value, font=("Arial", 42), justify="center"
+        self.green_entry.bind("<FocusIn>", self.on_entry_focus_in)
+        self.green_entry.bind("<FocusOut>", self.on_entry_focus_out)
+
+        self.green_scale = tk.Scale(
+            input_frame,
+            from_=0, to=255,
+            orient="horizontal",
+            command=self.on_green_scale,
+            troughcolor="white",
+            bg="#F0F0F0",
+            width=40,
+            sliderlength=40
         )
-        self.blue_entry.grid(row=2, column=1, pady=10, padx=10, sticky="ew")
+        self.green_scale.config(fg="green", highlightthickness=0)
+        self.green_scale.grid(row=1, column=2, sticky="ew", padx=(0, 20))
+
+        # -------------------- B label + entry + scale ----------------------
+        tk.Label(
+            input_frame, text="B:", font=("Arial", 27), bg="#F0F0F0"
+        ).grid(row=2, column=0, sticky="w")
+
+        self.blue_entry = tk.Entry(
+            input_frame,
+            textvariable=self.blue_value,
+            font=("Arial", 42),
+            justify="center",
+            width=3
+        )
+        self.blue_entry.grid(row=2, column=1, sticky="w", padx=(10, 20))
+
+        self.blue_entry.bind("<FocusIn>", self.on_entry_focus_in)
+        self.blue_entry.bind("<FocusOut>", self.on_entry_focus_out)
+
+        self.blue_scale = tk.Scale(
+            input_frame,
+            from_=0, to=255,
+            orient="horizontal",
+            command=self.on_blue_scale,
+            troughcolor="white",
+            bg="#F0F0F0",
+            width=40,
+            sliderlength=40
+        )
+        self.blue_scale.config(fg="blue", highlightthickness=0)
+        self.blue_scale.grid(row=2, column=2, sticky="ew", padx=(0, 20))
+
+        # ---------- Default color buttons (including the 'current' color) ----------
+        # Exactly 6 total (the first is 'Current')
+        self.default_colors = [
+            ("Current", None),            # Will show the user's current color
+            ("Red", (255, 0, 0)),
+            ("Green", (0, 255, 0)),
+            ("Blue", (0, 0, 255)),
+            ("Yellow", (255, 255, 0)),
+            ("Cyan", (0, 255, 255))
+        ]
+        self.color_buttons = []
+
+        for idx, (color_name, rgb_tuple) in enumerate(self.default_colors):
+            btn = tk.Button(
+                preset_frame,
+                text="",  # no text, just color
+                width=4,
+                height=2,
+                command=lambda r=rgb_tuple: self.set_color_from_button(r)
+            )
+
+            # For default colors: apply gamma correction so they look more like real LEDs
+            if rgb_tuple is None:
+                # "Current" button starts white (will update automatically)
+                hexcolor = "#ffffff"
+            else:
+                r_raw, g_raw, b_raw = rgb_tuple
+                hexcolor = rgb_to_hex(r_raw, g_raw, b_raw)  # default gamma=2.2
+                # Actually, pass the third channel
+                hexcolor = rgb_to_hex(r_raw, g_raw, b_raw)
+
+            btn.config(bg=hexcolor, activebackground=hexcolor)
+            btn.grid(row=0, column=idx, padx=10, sticky="e")
+            self.color_buttons.append(btn)
 
         # Create keypad
         self.create_keypad()
 
+        # Two-way binding: whenever the StringVars change, update the scales & "Current" color
+        self.red_value.trace_add("write", self.on_red_entry_changed)
+        self.green_value.trace_add("write", self.on_green_entry_changed)
+        self.blue_value.trace_add("write", self.on_blue_entry_changed)
+
         # Bind interactions to reset timeout
         for child in self.winfo_children():
-            if isinstance(child, tk.Button) or isinstance(child, tk.Entry):
+            if isinstance(child, (tk.Button, tk.Entry)):
+                child.bind("<Button-1>", self.reset_timeout)
+                child.bind("<Key>", self.reset_timeout)
+
+        # Also bind interactions on children of frames
+        for child in preset_frame.winfo_children():
+            child.bind("<Button-1>", self.reset_timeout)
+        for child in input_frame.winfo_children():
+            if isinstance(child, (tk.Button, tk.Entry, tk.Scale)):
                 child.bind("<Button-1>", self.reset_timeout)
                 child.bind("<Key>", self.reset_timeout)
 
         self.reset_timeout()
 
+    # -----------------------------------------------------------------------
+    #   Focus In/Out for each Entry
+    # -----------------------------------------------------------------------
+    def on_entry_focus_in(self, event):
+        """Clear only the entry that got focused."""
+        event.widget.delete(0, tk.END)
+
+    def on_entry_focus_out(self, event):
+        """
+        If the entry is empty after losing focus, set it to '0'.
+        Also clamp to [0..255] if out of range.
+        """
+        text_value = event.widget.get().strip()
+        if not text_value:
+            # If empty, set to 0
+            event.widget.delete(0, tk.END)
+            event.widget.insert(0, "0")
+        else:
+            # Attempt clamping
+            ivalue = self.validate_rgb(text_value)
+            event.widget.delete(0, tk.END)
+            event.widget.insert(0, str(ivalue))
+
+    # -----------------------------------------------------------------------
+    #   Keypad creation
+    # -----------------------------------------------------------------------
     def create_keypad(self):
         """
         Create a numeric keypad with numbers, Clear, and Save buttons.
@@ -518,40 +709,116 @@ class RGBEntryFrame(tk.Frame):
             button.grid(row=row, column=col, sticky="nsew", padx=15, pady=15)
             button.config(width=7, height=3)
 
+    # -----------------------------------------------------------------------
+    #   Scale callbacks -> update corresponding Entry
+    # -----------------------------------------------------------------------
+    def on_red_scale(self, val):
+        self.reset_timeout()
+        self.red_value.set(str(int(float(val))))
+
+    def on_green_scale(self, val):
+        self.reset_timeout()
+        self.green_value.set(str(int(float(val))))
+
+    def on_blue_scale(self, val):
+        self.reset_timeout()
+        self.blue_value.set(str(int(float(val))))
+
+    # -----------------------------------------------------------------------
+    #   Entry trace callbacks -> update corresponding Scale
+    # -----------------------------------------------------------------------
+    def on_red_entry_changed(self, *args):
+        val = self.validate_rgb(self.red_value.get())
+        self.red_scale.set(val)
+        self.update_current_color_button()
+
+    def on_green_entry_changed(self, *args):
+        val = self.validate_rgb(self.green_value.get())
+        self.green_scale.set(val)
+        self.update_current_color_button()
+
+    def on_blue_entry_changed(self, *args):
+        val = self.validate_rgb(self.blue_value.get())
+        self.blue_scale.set(val)
+        self.update_current_color_button()
+
+    def validate_rgb(self, value):
+        """
+        Convert a string to an int clamped to [0..255].
+        If invalid, returns 0.
+        """
+        try:
+            ivalue = int(value)
+        except ValueError:
+            return 0
+        if ivalue < 0:
+            return 0
+        if ivalue > 255:
+            return 255
+        return ivalue
+
+    def update_current_color_button(self):
+        """Update the first default color button to reflect current R, G, B (gamma corrected)."""
+        r = self.validate_rgb(self.red_value.get())
+        g = self.validate_rgb(self.green_value.get())
+        b = self.validate_rgb(self.blue_value.get())
+
+        # If all three are zero, force (1,1,1) so it’s never fully black
+        if r == 0 and g == 0 and b == 0:
+            r, g, b = 1, 1, 1
+            self.red_value.set("1")
+            self.green_value.set("1")
+            self.blue_value.set("1")
+
+        # Convert to gamma-corrected hex
+        hexcolor = rgb_to_hex(r, g, b)
+        # The first color button is self.color_buttons[0]
+        self.color_buttons[0].config(bg=hexcolor, activebackground=hexcolor)
+
+    def set_color_from_button(self, rgb_tuple):
+        """
+        Called when a default color button is pressed.
+        If the button is 'Current' (rgb_tuple=None), do nothing.
+        Otherwise set the entries & scales to that color.
+        """
+        if rgb_tuple is None:
+            return
+        r, g, b = rgb_tuple
+        self.red_value.set(str(r))
+        self.green_value.set(str(g))
+        self.blue_value.set(str(b))
+
+    # -----------------------------------------------------------------------
+    #   Keypad number + Clear + Save
+    # -----------------------------------------------------------------------
     def on_number(self, number):
         """Handle number button presses."""
         self.reset_timeout()
         focused = self.focus_get()
-        if focused == self.red_entry:
-            current = self.red_value.get()
+        if focused in (self.red_entry, self.green_entry, self.blue_entry):
+            current = focused.get()
+            # If field is empty or if typed length < 3, append digit
             if len(current) < 3 and number.isdigit():
-                self.red_value.set(current + number)
-        elif focused == self.green_entry:
-            current = self.green_value.get()
-            if len(current) < 3 and number.isdigit():
-                self.green_value.set(current + number)
-        elif focused == self.blue_entry:
-            current = self.blue_value.get()
-            if len(current) < 3 and number.isdigit():
-                self.blue_value.set(current + number)
+                focused.insert(tk.END, number)
 
     def clear_inputs(self):
-        """Clear all RGB input fields."""
+        """Clear all RGB input fields (set to 0)."""
         self.reset_timeout()
-        self.red_value.set("")
-        self.green_value.set("")
-        self.blue_value.set("")
+        self.red_value.set("0")
+        self.green_value.set("0")
+        self.blue_value.set("0")
 
     def save_rgb(self):
         """Save the entered RGB values."""
         self.reset_timeout()
         try:
-            red = int(self.red_value.get())
-            green = int(self.green_value.get())
-            blue = int(self.blue_value.get())
+            red = self.validate_rgb(self.red_value.get())
+            green = self.validate_rgb(self.green_value.get())
+            blue = self.validate_rgb(self.blue_value.get())
 
-            if not (0 <= red <= 255 and 0 <= green <= 255 and 0 <= blue <= 255):
-                raise ValueError("RGB values must be between 0 and 255.")
+            # If all zero, clamp to (1,1,1)
+            if red == 0 and green == 0 and blue == 0:
+                red, green, blue = 1, 1, 1
 
             # Load existing lockers.json file
             with open("lockers.json", "r") as file:
@@ -582,25 +849,37 @@ class RGBEntryFrame(tk.Frame):
             self.hide()
 
         except ValueError as e:
-            print(f"Invalid Input: {str(e)}")
+            print(f"Invalid Input: {str(e)}", file=sys.stderr)
         except KeyError as e:
-            print(f"Error: {str(e)}")
+            print(f"Error: {str(e)}", file=sys.stderr)
         except Exception as e:
-            print(f"Error: An unexpected error occurred: {str(e)}")
+            print(f"Error: An unexpected error occurred: {str(e)}", file=sys.stderr)
 
+    # -----------------------------------------------------------------------
+    #   Show / Hide
+    # -----------------------------------------------------------------------
     def on_close(self):
-        """Handle closing the frame via the "X" button."""
+        """Handle closing the frame via the 'X' button."""
         self.hide()
 
     def show(self, locker_id):
-        """Display the RGBEntryFrame for a specific locker or all lockers."""
+        """
+        Display the RGBEntryFrame for a specific locker or all lockers.
+        Initialize to 125,125,125 each time we show the frame.
+        """
         self.locker_id = locker_id
+        # When showing, set default 125,125,125
+        self.red_value.set("125")
+        self.green_value.set("125")
+        self.blue_value.set("125")
+
         if locker_id == 255:
-            title = "Set RGB for All Lockers"
+            title = "RGB for All Lockers"
         else:
-            title = f"Set RGB for Locker {locker_id}"
+            title = f"RGB for Locker {locker_id}"
         # Update the title label
         self.title_label.config(text=title)
+
         self.place(relx=0.5, rely=0.5, anchor="center")
         self.lift()
         self.focus_set()
@@ -613,13 +892,17 @@ class RGBEntryFrame(tk.Frame):
     def hide(self):
         """Hide the RGBEntryFrame."""
         self.place_forget()
-        self.red_value.set("")
-        self.green_value.set("")
-        self.blue_value.set("")
+        # Optional: if you want to fully reset fields after hiding, uncomment:
+        # self.red_value.set("")
+        # self.green_value.set("")
+        # self.blue_value.set("")
         if self.last_interaction:
             self.after_cancel(self.last_interaction)
             self.last_interaction = None
 
+    # -----------------------------------------------------------------------
+    #   Timeout handling
+    # -----------------------------------------------------------------------
     def reset_timeout(self, event=None):
         """Reset the timeout timer upon user interaction."""
         if self.last_interaction:
@@ -629,6 +912,7 @@ class RGBEntryFrame(tk.Frame):
     def on_timeout(self):
         """Handle frame closure on timeout."""
         self.hide()
+
 
 
 class PaymentPopupFrame(tk.Frame):
