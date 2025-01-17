@@ -99,27 +99,27 @@ class SPIHandler:
         except Exception as e:
             print(f"SPIHandler: Error during SPI transfer - {e}")
 
-    def set_led_color(self, locker_number, red, green, blue):
-        self.send_command(0x01, [locker_number, red, green, blue])
+    def set_led_color(self, locker_number, red, green, blue, mode = 0xFF):
+        self.send_command(0x01, [locker_number, red, green, blue, mode])
 
     def open_locker(self, locker_number):
-        self.send_command(0x03, [locker_number, 0xFF, 0xFF, 0xFF])
+        self.send_command(0x03, [locker_number, 0xFF, 0xFF, 0xFF, 0xFF])
 
     def set_price(self, locker_number, price):
         price_in_cents = int(price  )
-        self.send_command(0x02, [locker_number, (price_in_cents >> 8) & 0xFF, price_in_cents & 0xFF, 0x00])
+        self.send_command(0x02, [locker_number, (price_in_cents >> 8) & 0xFF, price_in_cents & 0xFF, 0xFF, 0xFF])
 
     def send_dummy_and_read(self):
         if not self.spi:
             print("SPIHandler: SPI not initialized.")
             return
-        dummy_message = [0xFF] * 5
+        dummy_message = [0xFF] * 6
         try:
             with self.lock:
                 print("Sending dummy message...")
                 response = self.spi.xfer2(dummy_message)  # Send dummy message
                 time.sleep(0.1)
-                response = self.spi.xfer2([0x00] * 5)  # Receive 5 bytes
+                response = self.spi.xfer2([0x00] * 6)  # Receive 5 bytes
                 print(f"SPI Response: {response}")
                 interpret_and_notify(response)
         except Exception as e:

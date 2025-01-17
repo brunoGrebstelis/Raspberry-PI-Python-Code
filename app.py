@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import messagebox, TclError
 import time
 import os
-from admin_frames import AdminOptionsFrame, PriceEntryFrame, InformationFrame, RGBEntryFrame, PaymentPopupFrame, PinEntryFrame, SetPinFrame
+from admin_frames import AdminOptionsFrame, PriceEntryFrame, InformationFrame, RGBEntryFrame, PaymentPopupFrame, PinEntryFrame, SetPinFrame, LightingModeFrame
 from utils import load_locker_data, save_locker_data, send_command, log_event
 from spi_handler import SPIHandler
 from scheduler import Scheduler
@@ -91,6 +91,8 @@ class VendingMachineApp(tk.Tk):
         self.set_pin_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.set_pin_frame.hide()
 
+        self.lighting_mode_frame = LightingModeFrame(self, spi_handler=None, timeout=60000)
+
         # SPIHandler initialization with error handling
         try:
             self.spi_handler = SPIHandler(bus=0, device=0, speed_hz=500000)
@@ -102,6 +104,7 @@ class VendingMachineApp(tk.Tk):
             # Assign SPI handler to RGBEntryFrame and AdminOptionsFrame
             self.rgb_entry_frame.spi_handler = self.spi_handler
             self.admin_options_frame.spi_handler = self.spi_handler
+            self.lighting_mode_frame.spi_handler = self.spi_handler
 
         except (ImportError, FileNotFoundError, AttributeError) as e:
             self.spi_handler = None
@@ -565,7 +568,7 @@ class VendingMachineApp(tk.Tk):
                 green = data.get("green", 0)
                 blue = data.get("blue", 0)
                 locker_number = int(locker_id)
-                self.spi_handler.set_led_color(locker_number, red, green, blue)
+                self.spi_handler.set_led_color(locker_number, red, green, blue, 0xFF)
                 print(f"LED color for Locker {locker_number} set to RGB({red}, {green}, {blue})")
                 time.sleep(0.05)
         else:

@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import messagebox
 import json
 from gui import BG_COLOR, GREEN_COLOR, TAG_COLOR
+import sys
 
 class AdminOptionsFrame(tk.Frame):
     def __init__(
@@ -16,7 +17,7 @@ class AdminOptionsFrame(tk.Frame):
             save_callback, 
             spi_handler, 
             close_program_callback, 
-            lock_order_callback,   # <-- NEW CALLBACK PARAMETER
+            lock_order_callback,   
             cancel_order_callback,
             timeout=60000
     ):
@@ -33,6 +34,7 @@ class AdminOptionsFrame(tk.Frame):
         :param spi_handler: SPI handler object.
         :param close_program_callback: Function to close the program.
         :param lock_order_callback: Function to lock the order (NEW).
+        :param cancel_order_callback: Function to cancel any ongoing order on show.
         :param timeout: Timeout duration in milliseconds.
         """
         super().__init__(master, bg="#F0F0F0")
@@ -45,7 +47,7 @@ class AdminOptionsFrame(tk.Frame):
         self.save_callback = save_callback
         self.spi_handler = spi_handler
         self.close_program_callback = close_program_callback
-        self.lock_order_callback = lock_order_callback  # <-- STORE THE NEW CALLBACK
+        self.lock_order_callback = lock_order_callback
         self.cancel_order_callback = cancel_order_callback
         self.timeout = timeout
         self.last_interaction = None
@@ -53,7 +55,7 @@ class AdminOptionsFrame(tk.Frame):
         # Configure grid layout
         self.grid_rowconfigure(0, weight=0)  # For the "X" button
         self.grid_rowconfigure(1, weight=1)  # For the label
-        for i in range(2, 7):
+        for i in range(2, 8):  # We’ll have more rows now
             self.grid_rowconfigure(i, weight=1)
         for i in range(2):
             self.grid_columnconfigure(i, weight=1)
@@ -72,22 +74,24 @@ class AdminOptionsFrame(tk.Frame):
         )
         self.label.grid(row=1, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
-        # Buttons
+        # Buttons (reduced thickness)
         admin_buttons = [
-            ("Unlock Locker", self.on_unlock),
-            ("Change Price", self.on_change_price),
-            ("Change Color", self.on_change_color),
-            ("Change All Colors", self.on_change_all_color),
-            ("Lock the order", self.on_lock_order),  # <-- NEW BUTTON
-            ("Close Program", self.on_close_program)        
+            ("Unlock Locker",      self.on_unlock),
+            ("Change Price",       self.on_change_price),
+            ("Change Color",       self.on_change_color),
+            ("Change All Colors",  self.on_change_all_color),
+            ("Lock The order",     self.on_lock_order),      # NEW
+            ("Set Lighting mode",  self.on_set_lighting_mode),  # NEW BUTTON
+            ("Close Program",      self.on_close_program),
         ]
 
         for idx, (text, command) in enumerate(admin_buttons, start=2):
             button = tk.Button(
                 self, text=text, font=("Arial", 27), command=command
             )
-            button.grid(row=idx, column=0, columnspan=2, padx=30, pady=15, sticky="nsew")
-            button.config(width=45, height=3)
+            # Make them a bit less thick (adjust width/height as needed)
+            button.config(width=40, height=2)
+            button.grid(row=idx, column=0, columnspan=2, padx=30, pady=10, sticky="nsew")
 
         # Bind interactions within the frame to reset the timeout
         for child in self.winfo_children():
@@ -103,7 +107,7 @@ class AdminOptionsFrame(tk.Frame):
 
         # Mark locker as available and reset button GUI
         self.locker_data[str(self.locker_id)]["status"] = True
-        self.buttons[self.locker_id].config(bg=BG_COLOR, state="normal")  # Reset button
+        self.buttons[self.locker_id].config(bg="#F0F0F0", state="normal")  # Reset button
         self.save_callback(self.locker_data)
 
         self.hide()
@@ -134,7 +138,17 @@ class AdminOptionsFrame(tk.Frame):
     def on_lock_order(self):
         """Handle locking the order (NEW)."""
         self.reset_timeout()
-        self.lock_order_callback()  # <-- CALL THE NEW CALLBACK
+        self.lock_order_callback()  # CALL THE NEW CALLBACK
+        self.hide()
+
+    def on_set_lighting_mode(self):
+        """
+        Show the LightingModeFrame when the 'Set Lighting mode' button is pressed.
+        """
+        self.reset_timeout()
+        # Show the new LightingModeFrame
+        if hasattr(self.master, "lighting_mode_frame"):
+            self.master.lighting_mode_frame.show(self.locker_id)
         self.hide()
 
     def on_close(self):
@@ -399,8 +413,6 @@ class InformationFrame(tk.Frame):
         self.hide()
 
 
-import tkinter as tk
-import json
 
 def gamma_correct(value, gamma=2.2):
     """
@@ -1289,3 +1301,129 @@ class SetPinFrame(tk.Frame):
     def on_timeout(self):
         """Timeout => same as closing => hide + set "" if second way."""
         self.on_close()
+
+class LightingModeFrame(tk.Frame):
+    def __init__(self, master, spi_handler, timeout=60000):
+        """
+        Initialize the LightingModeFrame.
+
+        :param master: Parent widget.
+        :param timeout: Timeout duration in milliseconds.
+        """
+        super().__init__(master, bg="#F0F0F0")
+        self.master = master
+        self.timeout = timeout
+        self.spi_handler = spi_handler
+        self.last_interaction = None
+
+        # Configure grid layout
+        self.grid_rowconfigure(0, weight=0)  # For the "X" button
+        self.grid_rowconfigure(1, weight=1)  # For the label
+        for i in range(2, 7):
+            self.grid_rowconfigure(i, weight=1)
+        for i in range(2):
+            self.grid_columnconfigure(i, weight=1)
+
+        # Create "X" button to close the frame
+        self.close_button = tk.Button(
+            self, text="X", command=self.on_close, font=("Arial", 27, "bold"), bd=0,
+            bg="#F0F0F0", activebackground="#F0F0F0"
+        )
+        self.close_button.grid(row=0, column=1, sticky="ne", padx=20, pady=20)
+        self.close_button.config(width=4, height=2)
+
+        # Frame Title
+        self.label = tk.Label(
+            self, text="Lighting Mode Options", font=("Arial", 36, "bold"), bg="#F0F0F0"
+        )
+        self.label.grid(row=1, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
+
+        # Mode Buttons
+        mode_buttons = [
+            ("Mode1", self.on_mode1),
+            ("Mode2", self.on_mode2),
+            ("Mode3", self.on_mode3),
+            ("Mode4", self.on_mode4),
+            ("Mode5", self.on_mode5),
+        ]
+
+        for idx, (text, command) in enumerate(mode_buttons, start=2):
+            button = tk.Button(
+                self, text=text, font=("Arial", 27), command=command
+            )
+            # Same reduced thickness as AdminOptionsFrame
+            button.config(width=40, height=2)
+            button.grid(row=idx, column=0, columnspan=2, padx=30, pady=10, sticky="nsew")
+
+        # Bind interactions to reset the timeout
+        for child in self.winfo_children():
+            if isinstance(child, tk.Button):
+                child.bind("<Button-1>", self.reset_timeout)
+
+        self.reset_timeout()
+
+    def on_mode1(self):
+        """Handle selecting Mode1."""
+        self.spi_handler.set_led_color(255, 0, 0, 0, 1)
+        self.reset_timeout()
+        print("Mode1 selected.")
+        self.hide()
+
+    def on_mode2(self):
+        """Handle selecting Mode2."""
+        self.spi_handler.set_led_color(255, 0, 0, 0, 2)
+        self.reset_timeout()
+        print("Mode2 selected.")
+        self.hide()
+
+    def on_mode3(self):
+        """Handle selecting Mode3."""
+        self.spi_handler.set_led_color(255, 0, 0, 0, 3)
+        self.reset_timeout()
+        print("Mode3 selected.")
+        self.hide()
+
+    def on_mode4(self):
+        """Handle selecting Mode4."""
+        self.spi_handler.set_led_color(255, 0, 0, 0, 4)
+        self.reset_timeout()
+        print("Mode4 selected.")
+        self.hide()
+
+    def on_mode5(self):
+        """Handle selecting Mode5."""
+        self.spi_handler.set_led_color(255, 0, 0, 0, 5)
+        self.reset_timeout()
+        print("Mode5 selected.")
+        self.hide()
+
+    def on_close(self):
+        """Close the LightingModeFrame."""
+        self.hide()
+
+    def show(self, locker_id):
+        """
+        Display the LightingModeFrame in the center of the screen.
+        """
+        self.locker_id = locker_id
+        self.place(relx=0.5, rely=0.5, anchor="center")
+        self.lift()
+        self.focus_set()
+        self.reset_timeout()
+
+    def hide(self):
+        """Hide the LightingModeFrame."""
+        self.place_forget()
+        if self.last_interaction:
+            self.after_cancel(self.last_interaction)
+            self.last_interaction = None
+
+    def reset_timeout(self, event=None):
+        """Reset the timeout timer upon user interaction."""
+        if self.last_interaction:
+            self.after_cancel(self.last_interaction)
+        self.last_interaction = self.after(self.timeout, self.on_timeout)
+
+    def on_timeout(self):
+        """Handle frame closure on timeout."""
+        self.hide()
