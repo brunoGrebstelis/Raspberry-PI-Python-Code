@@ -302,6 +302,13 @@ def generate_sales_report(period: str):
         - line_chart_path (str): File path to the generated line chart image.
         - pie_chart_path (str): File path to the generated pie chart image.
     """
+    # Utility function to remove ".00" if present
+    def remove_trailing_zeros(value: float) -> str:
+        formatted = f"{value:,.2f}"  # Keep thousands separator
+        # Strip trailing zeros and a trailing dot if it becomes leftover
+        formatted = formatted.rstrip('0').rstrip('.')
+        return formatted
+
     date_range = parse_period(period)
     if not date_range:
         return (f"Could not interpret period: {period}", None, None)
@@ -351,18 +358,18 @@ def generate_sales_report(period: str):
     lines = []
     lines.append(f"Sales Report for {period}")
     lines.append(f"Date Range: {start_dt.strftime('%Y-%m-%d')} → {end_dt.strftime('%Y-%m-%d')}")
-    lines.append(f"Total Earnings: €{total_earnings:,.2f}")
+    lines.append(f"Total Earnings: €{remove_trailing_zeros(total_earnings)}")
     lines.append(f"Total Purchases: {total_purchases}")
     lines.append("")
     lines.append(f"Grouping by: {grouping.capitalize()}")
     lines.append("Top 3 Groups (by earnings):")
     for (g, val, count) in top_3_with_counts:
-        lines.append(f"   • {g}: €{val:,.2f} ({count})")
+        lines.append(f"   • {g}: €{remove_trailing_zeros(val)} ({count})")
     lines.append("")
     lines.append("Top 3 Lockers (by earnings):")  # Updated Title
     for (locker_id, earnings) in top_3_lockers:
         sales_count = locker_sales_counts.get(locker_id, 0)
-        lines.append(f"   • Locker {locker_id}: €{earnings:,.2f} ({sales_count})")
+        lines.append(f"   • Locker {locker_id}: €{remove_trailing_zeros(earnings)} ({sales_count})")
     report_text = "\n".join(lines)
 
     # 5) Build charts
@@ -379,12 +386,18 @@ def generate_sales_report(period: str):
     plt.xticks(rotation=45, ha='right')
     plt.grid(True)
 
-    # Annotate each point with earnings and number of sales
+    # Make the top maximum value a bit larger so annotations are not cut off
+    if y_vals:
+        max_y = max(y_vals)
+        plt.ylim(top=max_y * 1.1)
+
+    # Annotate each point with earnings and number of sales (in one line)
     for x, y, count in zip(x_vals, y_vals, sales_counts):
-        plt.annotate(f"€{y:.2f}\n({count})", (x, y), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8)
+        annotation_text = f"€{remove_trailing_zeros(y)}({count})"
+        plt.annotate(annotation_text, (x, y), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8)
 
     plt.tight_layout()
-    line_chart_path = "line_chart.png"
+    line_chart_path = "charts/line_chart.png"
     plt.savefig(line_chart_path)
     plt.close()
 
@@ -394,7 +407,7 @@ def generate_sales_report(period: str):
     values = []
     for (locker_id, sales_count) in locker_sales_counts.items():
         earnings = locker_earnings.get(locker_id, 0.0)
-        labels.append(f"Locker {locker_id}: €{earnings:,.2f} ({sales_count})")
+        labels.append(f"L{locker_id}: €{remove_trailing_zeros(earnings)}({sales_count})")
         values.append(sales_count)
 
     # If you only want to include the top 3 lockers in the pie chart:
@@ -403,7 +416,7 @@ def generate_sales_report(period: str):
     # values = []
     # for (locker_id, earnings) in top_3_lockers:
     #     sales_count = locker_sales_counts.get(locker_id, 0)
-    #     labels.append(f"Locker {locker_id}: €{earnings:,.2f} ({sales_count})")
+    #     labels.append(f"Locker {locker_id}: €{remove_trailing_zeros(earnings)} ({sales_count})")
     #     values.append(sales_count)
 
     plt.figure(figsize=(8, 8))
@@ -412,7 +425,7 @@ def generate_sales_report(period: str):
     else:
         plt.pie(values, labels=labels, autopct=lambda pct: f"{pct:.1f}%" if pct > 0 else '', startangle=140)
         plt.title(f"Locker Sales Distribution: {period}")
-    pie_chart_path = "pie_chart.png"
+    pie_chart_path = "charts/pie_chart.png"
     plt.savefig(pie_chart_path)
     plt.close()
 
