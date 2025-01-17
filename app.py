@@ -36,7 +36,7 @@ class VendingMachineApp(tk.Tk):
         self.locker_data = load_locker_data()
 
         # Initialize the scheduler
-        self.scheduler = Scheduler()
+        self.scheduler = Scheduler(self.bot_queue)
         self.scheduler.start()
 
         # Boolean to enable or disable PIN check on exit

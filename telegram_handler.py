@@ -335,6 +335,8 @@ class TelegramBotHandler:
         Continuously read messages from the multiprocessing.Queue.
         If 'chat_id' is None, broadcast to ALL saved IDs.
         If 'chat_id' is an integer, send only to that one chat.
+
+        Now also checks for 'image_path' to send an image instead of text.
         """
         while True:
             msg = await asyncio.to_thread(self.bot_queue.get)
@@ -344,16 +346,25 @@ class TelegramBotHandler:
                 print("[TelegramBotHandler] Received stop signal from queue.")
                 break
 
-            # Expecting a dict like { "chat_id": ..., "text": ... }
-            chat_id = msg.get("chat_id")
-            text = msg.get("text", "No text found")
+            chat_id = msg.get("chat_id")  # Could be None (broadcast) or a specific chat_id
 
-            if chat_id is None:
-                all_chat_ids = load_chat_ids()
-                if not all_chat_ids:
-                    print("[TelegramBotHandler] No chat IDs found. Skipping broadcast.")
-                    continue
-                for cid in all_chat_ids:
-                    await self._send_message_with_retries(cid, text)
+            # Check if this is an image message
+            if "image_path" in msg:
+                image_path = msg["image_path"]
+                caption = msg.get("caption", "")  # optional
+                # Send the photo with retries
+                await self._send_photo_with_retries(chat_id, image_path, caption)
             else:
-                await self._send_message_with_retries(chat_id, text)
+                # Otherwise, assume it's a text message
+                text = msg.get("text", "No text found")
+                # If chat_id is None, broadcast to all saved IDs
+                if chat_id is None:
+                    all_chat_ids = load_chat_ids()
+                    if not all_chat_ids:
+                        print("[TelegramBotHandler] No chat IDs found. Skipping broadcast.")
+                        continue
+                    for cid in all_chat_ids:
+                        await self._send_message_with_retries(cid, text)
+                else:
+                    # Send only to the specified chat_id
+                    await self._send_message_with_retries(chat_id, text)
