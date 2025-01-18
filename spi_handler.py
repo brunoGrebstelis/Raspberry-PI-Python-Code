@@ -45,7 +45,10 @@ import time
 from utils import interpret_and_notify
 
 class SPIHandler:
-    def __init__(self, bus=0, device=0, speed_hz=1600000):
+    def __init__(self, app, bot_queue, bus=0, device=0, speed_hz=1600000):
+        self.app = app 
+        self.bot_queue = bot_queue
+        
         # Initialize SPI
         try:
             self.spi = spidev.SpiDev()  # Use spidev
@@ -121,7 +124,7 @@ class SPIHandler:
                 time.sleep(0.1)
                 response = self.spi.xfer2([0x00] * 6)  # Receive 5 bytes
                 print(f"SPI Response: {response}")
-                interpret_and_notify(response)
+                interpret_and_notify(self.app, response, self.bot_queue)
         except Exception as e:
             print(f"SPIHandler: Error during SPI communication - {e}")
 

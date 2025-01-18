@@ -95,7 +95,7 @@ class VendingMachineApp(tk.Tk):
 
         # SPIHandler initialization with error handling
         try:
-            self.spi_handler = SPIHandler(bus=0, device=0, speed_hz=500000)
+            self.spi_handler = SPIHandler(app=self, bot_queue = self.bot_queue, bus=0, device=0, speed_hz=500000)
             self.spi_enabled = True
             print("SPI initialized successfully.")
             self.transfer_rgb_to_stm32()

@@ -338,17 +338,11 @@ class InformationFrame(tk.Frame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
-        # "X" button
-        self.close_button = tk.Button(
-            self, text="X", command=self.on_close, font=("Arial", 27, "bold"),
-            bd=0, bg="#FFC0C0", activebackground="#FFC0C0"
-        )
-        self.close_button.place(relx=0.95, rely=0.05, anchor="ne")
 
         # Message content
         text_german = (
             "Leider ist das Schließfach blockiert.\n"
-            "Für Rückerstattung oder Blumen kontaktieren Sie bitte:\n"
+            "   Für Rückerstattung oder Blumen kontaktieren Sie bitte:  \n"
             "Janis: +4915757165517\n"
             "Aija: +4915782920110"
         )
@@ -361,7 +355,7 @@ class InformationFrame(tk.Frame):
 
         # Labels for the German text (larger size, bold font)
         label_german = tk.Label(
-            self, text=text_german, font=("Arial", 33, "bold"), bg="#FFC0C0", justify="center"
+            self, text=text_german, font=("Arial", 33, "bold"), bg="#FFC0C0", justify="center", wraplength=1600
         )
         label_german.pack(pady=(60, 30))
 

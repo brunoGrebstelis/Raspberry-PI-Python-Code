@@ -15,7 +15,7 @@ import base64
 
 from admin_windows import InformationWindow
 from collections import defaultdict, Counter
-
+from admin_frames import InformationFrame
 
 
 LOG_FOLDER = "logs"
@@ -540,55 +540,88 @@ def generate_locker_info():
 
 
 
-def interpret_and_notify(data):
+def interpret_and_notify(app, data, bot_queue):
+    # Updated validation to expect 6 bytes
+    if not isinstance(bytes(data), (bytes, bytearray)) or len(data) != 6:
+        print("Invalid input: Expected a 6-byte sequence.")
+        return  # Exit the function if input is invalid
+    
 
-    if not isinstance(data, (bytes, bytearray)) or len(data) != 5:
-        print("Invalid input: Expected a 5-byte sequence.")
-
+    # Extracting bytes
     command = data[0]
-    byte2 = data[1]
-    byte3 = data[2]
+    byte1 = data[1]
+    byte2 = data[2]
+    byte3 = data[3]
+    byte4 = data[4]
+    byte5 = data[5]
 
-
+    # Example: byte4 is an additional status code
+    # You can adjust the handling based on the actual purpose of byte4
+    status_code = byte4
 
     if command == 0xF1:  # Problems with lockers
-        locker_id = byte2
-        subject = "Problems with Locker"
-        if byte3 == 50:
+        locker_id = byte1
+        subject = '❗️"Problems with Locker"❗️'
+        if byte2 == 50:
             body = f"Locker {locker_id}: Has been opened for an hour."
-        elif byte3 == 100:
+        elif byte2 == 100:
             body = f"Locker {locker_id}: Was opened for an hour, now closed."
-        elif byte3 == 150:
+        elif byte2 == 150:
             body = f"Locker {locker_id}: Jammed. Customer has been informed to call support."
             InformationWindow.show()
         else:
-            body = f"Locker {locker_id}: Unknown issue (code {byte3})."
-        #send_email_all(subject, body)
+            body = f"Locker {locker_id}: Unknown issue (code {byte2})."
+
+        # Incorporate the 6th byte (status_code) if necessary
+        #body += f" Status Code: {status_code}."
+
+        message = {
+            "chat_id": None,  # Replace with actual chat ID
+            "text": f"{subject}\n{body}"
+        }
+        bot_queue.put(message)
+        app.information_frame.show()
 
     elif command == 0xF2:  # Problems with I2C devices
-        locker_id = byte2
-        subject = "Problems with I2C Devices"
-        if byte3 == 50:
+        locker_id = byte1
+        subject = '❗️"Problems with I2C Devices"❗️'
+        if byte2 == 50:
             body = f"Locker {locker_id}: Issue with price tag display."
-        elif byte3 == 100:
+        elif byte2 == 100:
             body = f"Locker {locker_id}: Issue with LED stripe driver."
         else:
-            body = f"Locker {locker_id}: Unknown issue (code {byte3})."
-        #send_email_all(subject, body)
+            body = f"Locker {locker_id}: Unknown issue (code {byte2})."
+
+        # Incorporate the 6th byte (status_code) if necessary
+        #body += f" Status Code: {status_code}."
+
+        message = {
+            "chat_id": None,  # Replace with actual chat ID
+            "text": f"{subject}\n{body}"
+        }
+        bot_queue.put(message)
 
     elif command == 0xF3:  # Problems in ventilation system
-        ventilation_object = byte2
-        subject = "Problems in Ventilation System"
-        if byte3 == 50:
+        ventilation_object = byte1
+        subject = '❗️"Problems in Ventilation System"❗️'
+        if byte2 == 50:
             body = f"Ventilation object {ventilation_object}: Fan problem detected."
-        elif byte3 == 100:
+        elif byte2 == 100:
             body = f"Ventilation object {ventilation_object}: Humidity/temperature sensor issue detected."
         else:
-            body = f"Ventilation object {ventilation_object}: Unknown issue (code {byte3})."
-        #send_email_all(subject, body)
+            body = f"Ventilation object {ventilation_object}: Unknown issue (code {byte2})."
+
+        # Incorporate the 6th byte (status_code) if necessary
+        #body += f" Status Code: {status_code}."
+
+        message = {
+            "chat_id": None,  # Replace with actual chat ID
+            "text": f"{subject}\n{body}"
+        }
+        bot_queue.put(message)
 
     else:
-        print("Unknown command (0x{command:02X}).")
+        print(f"Unknown command (0x{command:02X}).")
 
 
         
