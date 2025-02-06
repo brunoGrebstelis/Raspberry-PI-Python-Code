@@ -17,6 +17,7 @@ from admin_windows import InformationWindow
 from collections import defaultdict, Counter
 from admin_frames import InformationFrame
 
+from typing import Optional
 
 LOG_FOLDER = "logs"
 DB_FILE = "logs/vending_machine_logs.db"
@@ -431,6 +432,55 @@ def generate_sales_report(period: str):
 
     return (report_text, line_chart_path, pie_chart_path)
 
+
+def generate_csv_file(period: str) -> Optional[str]:
+    """
+    Generates a CSV file for the given period, returning the path to the CSV file.
+    If the period cannot be parsed or no data is found, returns None.
+    """
+    date_range = parse_period(period)
+    if not date_range:
+        print(f"[generate_csv_file] Could not parse period: {period}")
+        return None
+
+    (start_dt, end_dt) = date_range
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    query = """
+        SELECT date, time, locker_id, price
+        FROM logs
+        WHERE date >= ? AND date <= ?
+        ORDER BY date ASC, time ASC
+    """
+    start_str = start_dt.strftime("%Y-%m-%d")
+    end_str = end_dt.strftime("%Y-%m-%d")
+    cursor.execute(query, (start_str, end_str))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        print(f"[generate_csv_file] No rows found for period: {period}")
+        return None
+
+    # Ensure "charts" folder exists
+    charts_folder = "charts"
+    if not os.path.isdir(charts_folder):
+        os.makedirs(charts_folder)
+
+    # Create a filename such as "sales_data_2025-01-01_to_2025-01-10.csv"
+    csv_filename = f"sales_data_{start_str}_to_{end_str}.csv"
+    csv_path = os.path.join(charts_folder, csv_filename)
+
+    print(f"[generate_csv_file] Writing CSV to: {csv_path}")
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["Date", "Time", "Locker ID", "Price"])
+        for (date_str, time_str, locker_id, price) in rows:
+            writer.writerow([date_str, time_str, locker_id, price])
+
+    return csv_path
 
 
 

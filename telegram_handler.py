@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from utils import generate_locker_info, generate_sales_report
+from utils import generate_locker_info, generate_sales_report, generate_csv_file
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TimedOut, BadRequest
 from telegram.ext import (
@@ -54,9 +54,12 @@ class TelegramBotHandler:
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("info", self.info_command))
         self.app.add_handler(CommandHandler("sales", self.sales_command))
+        self.app.add_handler(CommandHandler("csv", self.csv_command))
 
         # Inline button handler for the sales selection
+        self.app.add_handler(CallbackQueryHandler(self.handle_csv_selection, pattern="^csv_"))
         self.app.add_handler(CallbackQueryHandler(self.handle_sales_selection))
+
 
         # Single text handler to process manual entry or fallback
         self.app.add_handler(
@@ -106,6 +109,30 @@ class TelegramBotHandler:
             reply_markup=reply_markup,
         )
 
+    async def csv_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Presents the same time-period options as /sales but will produce a CSV file
+        instead of text/charts.
+        """
+        keyboard = [
+            [InlineKeyboardButton("📅 This Year", callback_data="csv_this_year")],
+            [InlineKeyboardButton("📆 This Month", callback_data="csv_this_month")],
+            [InlineKeyboardButton("📅 Last Year", callback_data="csv_last_year")],
+            [InlineKeyboardButton("📆 Last Month", callback_data="csv_last_month")],
+            [InlineKeyboardButton("📅 Today", callback_data="csv_today")],
+            [InlineKeyboardButton("📆 Yesterday", callback_data="csv_yesterday")],
+            [InlineKeyboardButton("📈 Total", callback_data="csv_total")],
+            [InlineKeyboardButton("✍️ Manual Entry", callback_data="csv_manual_entry")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await self._retry(
+            update.message.reply_text,
+            "Please select a time period for the CSV export:",
+            reply_markup=reply_markup,
+        )
+
+
     async def handle_sales_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle inline keyboard callbacks for the sales periods."""
         query = update.callback_query
@@ -139,41 +166,109 @@ class TelegramBotHandler:
                 "Please enter the start date (YYYY-MM-DD):"
             )
 
+
+
+    async def handle_csv_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Handle inline keyboard callbacks for CSV export.
+        """
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+
+        # Predefined quick picks
+        if data in [
+            "csv_this_year",
+            "csv_this_month",
+            "csv_last_year",
+            "csv_last_month",
+            "csv_today",
+            "csv_yesterday",
+            "csv_total",
+        ]:
+            # Convert e.g. "csv_this_year" -> "this_year" -> "This Year"
+            label = data.replace("csv_", "").replace("_", " ").title()
+            await self.send_csv_report(label)
+
+        elif data == "csv_manual_entry":
+            # Switch to manual entry steps
+            context.user_data["csv_step"] = "start_date"
+            await self._retry(
+                query.edit_message_text,
+                "Please enter the start date (YYYY-MM-DD) for CSV export:",
+            )
+
+
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         Single text handler:
-          - If user_data indicates manual entry for sales, handle it
-          - Otherwise, fallback: echo
+        - If user_data indicates a /csv manual entry, handle it.
+        - Else if user_data indicates a /sales manual entry, handle it.
+        - Otherwise, fallback and just echo.
         """
-        if "sales_step" not in context.user_data:
-            # No manual entry in progress => fallback
-            await update.message.reply_text(f"You said: {update.message.text}")
-            return
 
-        # We are in the manual flow for sales
-        step = context.user_data["sales_step"]
-        if step == "start_date":
-            # Store the start date
-            context.user_data["start_date"] = update.message.text
-            # Move on to end date
-            context.user_data["sales_step"] = "end_date"
-            await self._retry(
-                update.message.reply_text,
-                "Please enter the end date (YYYY-MM-DD):"
-            )
+        # 1) Handle /csv manual entry flow.
+        if "csv_step" in context.user_data:
+            step = context.user_data["csv_step"]
 
-        elif step == "end_date":
-            # Now we have both dates
-            context.user_data["end_date"] = update.message.text
-            start_date = context.user_data["start_date"]
-            end_date = context.user_data["end_date"]
+            # First step: user typed the start date
+            if step == "start_date":
+                context.user_data["csv_start_date"] = update.message.text
+                context.user_data["csv_step"] = "end_date"
+                await self._retry(
+                    update.message.reply_text,
+                    "Please enter the end date (YYYY-MM-DD) for CSV export:"
+                )
+                return  # Stop here so we don't fall through to the sales logic.
 
-            # Broadcast "start_date to end_date" to all saved chats
-            period_label = f"{start_date} to {end_date}"
-            await self.sales(period_label)
+            # Second step: user typed the end date
+            elif step == "end_date":
+                context.user_data["csv_end_date"] = update.message.text
+                start_date = context.user_data["csv_start_date"]
+                end_date   = context.user_data["csv_end_date"]
+                period_label = f"{start_date} to {end_date}"
 
-            # Clear user_data to exit the manual entry flow
-            context.user_data.clear()
+                # Generate/send the CSV for the selected range
+                await self.send_csv_report(period_label)
+
+                # Clear state so we exit the CSV flow
+                context.user_data.clear()
+                return
+
+        # 2) Handle /sales manual entry flow.
+        if "sales_step" in context.user_data:
+            step = context.user_data["sales_step"]
+
+            # First step: user typed the start date
+            if step == "start_date":
+                context.user_data["start_date"] = update.message.text
+                context.user_data["sales_step"] = "end_date"
+                await self._retry(
+                    update.message.reply_text,
+                    "Please enter the end date (YYYY-MM-DD):"
+                )
+                return
+
+            # Second step: user typed the end date
+            elif step == "end_date":
+                context.user_data["end_date"] = update.message.text
+                start_date = context.user_data["start_date"]
+                end_date   = context.user_data["end_date"]
+                period_label = f"{start_date} to {end_date}"
+
+                # Generate/send the sales report for that range
+                await self.sales(period_label)
+
+                # Clear state so we exit the sales flow
+                context.user_data.clear()
+                return
+
+        # 3) Fallback if we're not in either flow (or done).
+        await self._retry(
+            update.message.reply_text,
+            f"You said: {update.message.text}"
+        )
+
 
     async def sales(self, period: str):
         all_chat_ids = load_chat_ids()
@@ -290,6 +385,65 @@ class TelegramBotHandler:
                 else:
                     print(f"[TelegramBotHandler] Failed to send photo to {chat_id} after {retries} attempts.")
                     return
+                
+
+    async def send_csv_report(self, period: str):
+        """
+        Generate a CSV for the specified period and broadcast it to all known chat IDs.
+        """
+        all_chat_ids = load_chat_ids()
+        if not all_chat_ids:
+            print("[send_csv_report] No chat IDs found. Nobody to send CSV to.")
+            return
+
+        from utils import generate_csv_file
+        csv_path = generate_csv_file(period)
+
+        # Debug printing:
+        print(f"[send_csv_report] generate_csv_file returned: {csv_path}")
+
+        if not csv_path:
+            # Means parse failure or no rows
+            msg_text = f"No CSV data found for period: {period}"
+            for cid in all_chat_ids:
+                await self._send_message_with_retries(cid, msg_text)
+            return
+
+        # We have a CSV file -> broadcast it
+        for cid in all_chat_ids:
+            await self._send_document_with_retries(cid, csv_path, caption=f"CSV Data for {period}")
+
+
+
+    async def _send_document_with_retries(self, chat_id, file_path, caption="", retries=5):
+        """
+        Send a document (e.g. CSV file) to a specific chat ID with retry logic.
+        """
+        for attempt in range(retries):
+            try:
+                with open(file_path, "rb") as doc:
+                    await self.app.bot.send_document(chat_id=chat_id, document=doc, caption=caption)
+                print(f"[TelegramBotHandler] Document sent to {chat_id}")
+                return
+            except TimedOut as e:
+                print(f"Attempt {attempt + 1} failed (TimedOut) sending document to {chat_id}: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                else:
+                    print(f"[TelegramBotHandler] Failed to send document after {retries} attempts.")
+                    return
+            except BadRequest as e:
+                print(f"[TelegramBotHandler] BadRequest (document) to {chat_id}: {e}")
+                return
+            except Exception as e:
+                print(f"[TelegramBotHandler] Attempt {attempt + 1} failed (Other Error) sending document: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    print(f"[TelegramBotHandler] Failed to send document after {retries} attempts.")
+                    return
+        
+
 
     async def run_bot(self):
         """
