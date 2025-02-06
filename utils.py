@@ -563,24 +563,21 @@ def interpret_and_notify(app, data, bot_queue):
         locker_id = byte1
         subject = '❗️"Problems with Locker"❗️'
         if byte2 == 50:
-            body = f"Locker {locker_id}: Has been opened for an hour."
+            body = f"Locker {locker_id}: Has been opened for 5 minutes."
         elif byte2 == 100:
-            body = f"Locker {locker_id}: Was opened for an hour, now closed."
+            body = f"Locker {locker_id}: Free space."
         elif byte2 == 150:
             body = f"Locker {locker_id}: Jammed. Customer has been informed to call support."
-            InformationWindow.show()
+            app.information_frame.show()
         else:
             body = f"Locker {locker_id}: Unknown issue (code {byte2})."
-
-        # Incorporate the 6th byte (status_code) if necessary
-        #body += f" Status Code: {status_code}."
 
         message = {
             "chat_id": None,  # Replace with actual chat ID
             "text": f"{subject}\n{body}"
         }
         bot_queue.put(message)
-        app.information_frame.show()
+        
 
     elif command == 0xF2:  # Problems with I2C devices
         locker_id = byte1
@@ -603,11 +600,11 @@ def interpret_and_notify(app, data, bot_queue):
 
     elif command == 0xF3:  # Problems in ventilation system
         ventilation_object = byte1
-        subject = '❗️"Problems in Ventilation System"❗️'
+        subject = '❗️"Problems with Climate"❗️'
         if byte2 == 50:
-            body = f"Ventilation object {ventilation_object}: Fan problem detected."
+            body = f"Temperature below zero! Sensor {ventilation_object}!"
         elif byte2 == 100:
-            body = f"Ventilation object {ventilation_object}: Humidity/temperature sensor issue detected."
+            body = f"Sensor is disconected! Sensor {ventilation_object}!"
         else:
             body = f"Ventilation object {ventilation_object}: Unknown issue (code {byte2})."
 

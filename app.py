@@ -137,6 +137,7 @@ class VendingMachineApp(tk.Tk):
 
         # Keyboard listener for Escape key
         self.bind("<Key>", self.keyboard_listener)
+        self.select_locker(None)
 
 
 

@@ -4,6 +4,7 @@ from tkinter import messagebox
 import json
 from gui import BG_COLOR, GREEN_COLOR, TAG_COLOR
 import sys
+import time
 
 class AdminOptionsFrame(tk.Frame):
     def __init__(
@@ -837,6 +838,7 @@ class RGBEntryFrame(tk.Frame):
                     locker["green"] = green
                     locker["blue"] = blue
                 self.spi_handler.set_led_color(255, red, green, blue)
+                time.sleep(0.05)
             else:  # Update a specific locker
                 locker = lockers.get(str(self.locker_id))
                 if locker:
@@ -844,6 +846,7 @@ class RGBEntryFrame(tk.Frame):
                     locker["green"] = green
                     locker["blue"] = blue
                     self.spi_handler.set_led_color(self.locker_id, red, green, blue)
+                    time.sleep(0.05)
                 else:
                     raise KeyError(f"Locker ID {self.locker_id} not found.")
 
@@ -1334,11 +1337,11 @@ class LightingModeFrame(tk.Frame):
 
         # Mode Buttons
         mode_buttons = [
-            ("Mode1", self.on_mode1),
-            ("Mode2", self.on_mode2),
-            ("Mode3", self.on_mode3),
-            ("Mode4", self.on_mode4),
-            ("Mode5", self.on_mode5),
+            ("Mode1 - V-day", self.on_mode1),
+            ("Mode2 - Disco", self.on_mode2),
+            ("Mode3 - Psychedelic", self.on_mode3),
+            ("Mode4 - Welcom", self.on_mode4),
+            ("Mode5 - Solid Dicsco", self.on_mode5),
         ]
 
         for idx, (text, command) in enumerate(mode_buttons, start=2):
