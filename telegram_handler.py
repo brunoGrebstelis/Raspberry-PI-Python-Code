@@ -55,9 +55,13 @@ class TelegramBotHandler:
         self.app.add_handler(CommandHandler("info", self.info_command))
         self.app.add_handler(CommandHandler("sales", self.sales_command))
         self.app.add_handler(CommandHandler("csv", self.csv_command))
+        self.app.add_handler(CommandHandler("climate", self.climate_command))
+        self.app.add_handler(CommandHandler("climate_csv", self.climate_csv_command))
+        self.app.add_handler(CommandHandler("help", self.help_command))
 
         # Inline button handler for the sales selection
         self.app.add_handler(CallbackQueryHandler(self.handle_csv_selection, pattern="^csv_"))
+        self.app.add_handler(CallbackQueryHandler(self.handle_climate_csv_selection, pattern="^climate_csv_"))
         self.app.add_handler(CallbackQueryHandler(self.handle_sales_selection))
 
 
@@ -132,6 +136,77 @@ class TelegramBotHandler:
             reply_markup=reply_markup,
         )
 
+    async def climate_csv_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Presents the same time-period options as /csv, but for climate data instead of sales.
+        """
+        keyboard = [
+            [InlineKeyboardButton("📅 This Year", callback_data="climate_csv_this_year")],
+            [InlineKeyboardButton("📆 This Month", callback_data="climate_csv_this_month")],
+            [InlineKeyboardButton("📅 Last Year", callback_data="climate_csv_last_year")],
+            [InlineKeyboardButton("📆 Last Month", callback_data="climate_csv_last_month")],
+            [InlineKeyboardButton("📅 Today", callback_data="climate_csv_today")],
+            [InlineKeyboardButton("📆 Yesterday", callback_data="climate_csv_yesterday")],
+            [InlineKeyboardButton("📈 Total", callback_data="climate_csv_total")],
+            [InlineKeyboardButton("✍️ Manual Entry", callback_data="climate_csv_manual_entry")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await self._retry(
+            update.message.reply_text,
+            "Please select a time period for the climate CSV export:",
+            reply_markup=reply_markup,
+        )
+
+
+    async def climate_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Responds with the latest climate reading and average (today, yesterday, last 30 days),
+        or "ND" if no data is found for a particular period.
+        Uses emojis for temperature (🌡) and humidity (💧).
+        """
+        from utils import get_climate_stats
+        stats = get_climate_stats()
+
+        # Helper to format a single temperature/humidity line
+        def fmt_line(label, t, h):
+            # If t or h is None => "ND"
+            if t is None or h is None:
+                return f"{label}: ND"
+            return f"{label}: 🌡{t:.1f}°C | 💧{h:.1f}%"
+
+        # Build the lines
+        lines = []
+        lines.append(fmt_line("Current", stats["current_temp"], stats["current_hum"]))
+        lines.append(fmt_line("Today", stats["avg_today_temp"], stats["avg_today_hum"]))
+        lines.append(fmt_line("Yesterday", stats["avg_yesterday_temp"], stats["avg_yesterday_hum"]))
+        lines.append(fmt_line("Last 30 days", stats["avg_30days_temp"], stats["avg_30days_hum"]))
+        
+
+        msg_text = "\n".join(lines)
+
+        # Send it back
+        await self._retry(update.message.reply_text, msg_text)
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Sends a list of available commands with brief descriptions (with emojis).
+        """
+        print("[DEBUG] help_command triggered")
+        help_text = (
+            "🌐Bot Commands Help\n\n"
+            "/start - 🤖Confirm the bot is online\n"
+            "/info - ℹDisplay locker info/status\n"
+            "/sales - 💰Generate sales reports\n"
+            "/csv - 📊Generate sales CSV files\n"
+            "/climate - 🌡️Show climate readings\n"
+            "/climate_csv - 🌦️Generate climate CSV files\n"
+            "/help - ❓Show this help message\n"
+        )
+
+        await self._retry(update.message.reply_text, help_text)
+
+
 
     async def handle_sales_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle inline keyboard callbacks for the sales periods."""
@@ -199,19 +274,76 @@ class TelegramBotHandler:
             )
 
 
+    async def handle_climate_csv_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Handle inline keyboard callbacks for climate CSV export.
+        """
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+
+        # For direct picks
+        if data in [
+            "climate_csv_this_year",
+            "climate_csv_this_month",
+            "climate_csv_last_year",
+            "climate_csv_last_month",
+            "climate_csv_today",
+            "climate_csv_yesterday",
+            "climate_csv_total",
+        ]:
+            # e.g. "climate_csv_this_year" => "this_year" => "This Year"
+            label = data.replace("climate_csv_", "").replace("_", " ").title()
+            await self.send_climate_csv_report(label)
+
+        elif data == "climate_csv_manual_entry":
+            context.user_data["climate_csv_step"] = "start_date"
+            await self._retry(
+                query.edit_message_text,
+                "Please enter the start date (YYYY-MM-DD) for climate CSV export:",
+            )
+
+
+
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
-        Single text handler:
-        - If user_data indicates a /csv manual entry, handle it.
+        Single text handler that:
+        - If user_data indicates a /climate_csv manual entry, handle it.
+        - Else if user_data indicates a /csv manual entry, handle it.
         - Else if user_data indicates a /sales manual entry, handle it.
         - Otherwise, fallback and just echo.
         """
 
-        # 1) Handle /csv manual entry flow.
+        # 1) Handle /climate_csv manual entry flow.
+        if "climate_csv_step" in context.user_data:
+            step = context.user_data["climate_csv_step"]
+
+            if step == "start_date":
+                context.user_data["climate_csv_start"] = update.message.text
+                context.user_data["climate_csv_step"] = "end_date"
+                await self._retry(
+                    update.message.reply_text,
+                    "Please enter the end date (YYYY-MM-DD) for climate CSV export:"
+                )
+                return  # Stop here
+
+            elif step == "end_date":
+                context.user_data["climate_csv_end"] = update.message.text
+                start_date = context.user_data["climate_csv_start"]
+                end_date   = context.user_data["climate_csv_end"]
+                period_label = f"{start_date} to {end_date}"
+
+                # Generate/send the climate CSV for that range
+                await self.send_climate_csv_report(period_label)
+
+                # Clear state so we exit the climate CSV flow
+                context.user_data.clear()
+                return
+
+        # 2) Handle /csv manual entry flow (sales CSV).
         if "csv_step" in context.user_data:
             step = context.user_data["csv_step"]
 
-            # First step: user typed the start date
             if step == "start_date":
                 context.user_data["csv_start_date"] = update.message.text
                 context.user_data["csv_step"] = "end_date"
@@ -219,27 +351,25 @@ class TelegramBotHandler:
                     update.message.reply_text,
                     "Please enter the end date (YYYY-MM-DD) for CSV export:"
                 )
-                return  # Stop here so we don't fall through to the sales logic.
+                return  # Stop here so we don't fall through to sales logic.
 
-            # Second step: user typed the end date
             elif step == "end_date":
                 context.user_data["csv_end_date"] = update.message.text
                 start_date = context.user_data["csv_start_date"]
                 end_date   = context.user_data["csv_end_date"]
                 period_label = f"{start_date} to {end_date}"
 
-                # Generate/send the CSV for the selected range
+                # Generate/send the sales CSV for the selected range
                 await self.send_csv_report(period_label)
 
                 # Clear state so we exit the CSV flow
                 context.user_data.clear()
                 return
 
-        # 2) Handle /sales manual entry flow.
+        # 3) Handle /sales manual entry flow.
         if "sales_step" in context.user_data:
             step = context.user_data["sales_step"]
 
-            # First step: user typed the start date
             if step == "start_date":
                 context.user_data["start_date"] = update.message.text
                 context.user_data["sales_step"] = "end_date"
@@ -249,7 +379,6 @@ class TelegramBotHandler:
                 )
                 return
 
-            # Second step: user typed the end date
             elif step == "end_date":
                 context.user_data["end_date"] = update.message.text
                 start_date = context.user_data["start_date"]
@@ -263,7 +392,7 @@ class TelegramBotHandler:
                 context.user_data.clear()
                 return
 
-        # 3) Fallback if we're not in either flow (or done).
+        # 4) Fallback if no manual entry is in progress.
         await self._retry(
             update.message.reply_text,
             f"You said: {update.message.text}"
@@ -412,6 +541,29 @@ class TelegramBotHandler:
         # We have a CSV file -> broadcast it
         for cid in all_chat_ids:
             await self._send_document_with_retries(cid, csv_path, caption=f"CSV Data for {period}")
+
+
+    async def send_climate_csv_report(self, period: str):
+        """
+        Generate a climate CSV for the specified period and broadcast to all known chat IDs.
+        """
+        all_chat_ids = load_chat_ids()
+        if not all_chat_ids:
+            print("[send_climate_csv_report] No chat IDs found. Nobody to send climate CSV to.")
+            return
+
+        from utils import generate_climate_csv_file
+        csv_path = generate_climate_csv_file(period)
+        print(f"[send_climate_csv_report] generate_climate_csv_file returned: {csv_path}")
+
+        if not csv_path:
+            msg_text = f"No climate CSV data found for period: {period}"
+            for cid in all_chat_ids:
+                await self._send_message_with_retries(cid, msg_text)
+            return
+
+        for cid in all_chat_ids:
+            await self._send_document_with_retries(cid, csv_path, caption=f"Climate CSV Data for {period}")
 
 
 

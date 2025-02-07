@@ -483,7 +483,169 @@ def generate_csv_file(period: str) -> Optional[str]:
     return csv_path
 
 
+def generate_climate_csv_file(period: str) -> Optional[str]:
+    """
+    Generates a CSV file for the climate data (temperature/humidity + sensor number)
+    over the given period, using logs/climate.db. 
+    Returns the CSV file path or None if no data or cannot parse period.
+    """
+    from datetime import datetime
+    import sqlite3
 
+    date_range = parse_period(period)
+    if not date_range:
+        print(f"[generate_climate_csv_file] Could not parse period: {period}")
+        return None
+
+    (start_dt, end_dt) = date_range
+    start_str = start_dt.strftime("%Y-%m-%d")
+    end_str   = end_dt.strftime("%Y-%m-%d")
+
+    climate_db = "logs/climate.db"
+    if not os.path.exists(climate_db):
+        print("[generate_climate_csv_file] No climate.db found.")
+        return None  # No DB => no data
+
+    conn = sqlite3.connect(climate_db)
+    cursor = conn.cursor()
+
+    # Include 'sensor' in the SELECT
+    query = """
+        SELECT date, time, sensor, temperature, humidity
+        FROM climate
+        WHERE date >= ? AND date <= ?
+        ORDER BY date ASC, time ASC
+    """
+    cursor.execute(query, (start_str, end_str))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        print(f"[generate_climate_csv_file] No climate rows found for {period}")
+        return None
+
+    # Ensure "charts" folder exists
+    charts_folder = "charts"
+    if not os.path.isdir(charts_folder):
+        os.makedirs(charts_folder)
+
+    csv_filename = f"climate_data_{start_str}_to_{end_str}.csv"
+    csv_path = os.path.join(charts_folder, csv_filename)
+    print(f"[generate_climate_csv_file] Writing climate CSV to: {csv_path}")
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        import csv
+        writer = csv.writer(f)
+        # CSV header now includes sensor
+        writer.writerow(["Date", "Time", "Sensor", "Temperature(°C)", "Humidity(%)"])
+        for (d, t, s, temp, hum) in rows:
+            writer.writerow([d, t, s, f"{temp:.2f}", f"{hum:.2f}"])
+
+    return csv_path
+
+
+
+def get_climate_stats():
+    """
+    Returns a dict with:
+      {
+        "current_temp": ... or None,
+        "current_hum": ... or None,
+        "avg_today_temp": ... or None,
+        "avg_today_hum": ... or None,
+        "avg_yesterday_temp": ... or None,
+        "avg_yesterday_hum": ... or None,
+        "avg_30days_temp": ... or None,
+        "avg_30days_hum": ... or None
+      }
+
+    If there's no data for a particular period, the value is None.
+    """
+    import sqlite3
+    import os
+    from datetime import datetime
+
+    # Ensure the DB exists
+    db_path = "logs/climate.db"
+    if not os.path.exists(db_path):
+        # No climate DB => definitely no data
+        return {
+            "current_temp": None,
+            "current_hum": None,
+            "avg_today_temp": None,
+            "avg_today_hum": None,
+            "avg_yesterday_temp": None,
+            "avg_yesterday_hum": None,
+            "avg_30days_temp": None,
+            "avg_30days_hum": None,
+        }
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # 1) Current reading (take the last row by id desc)
+    cursor.execute(
+        "SELECT temperature, humidity FROM climate ORDER BY id DESC LIMIT 1"
+    )
+    row = cursor.fetchone()
+    if row:
+        current_temp, current_hum = row
+    else:
+        current_temp = None
+        current_hum = None
+
+    # 2) Average today
+    cursor.execute("""
+        SELECT AVG(temperature), AVG(humidity)
+        FROM climate
+        WHERE date = date('now','localtime')
+    """)
+    row = cursor.fetchone()
+    if row and row[0] is not None and row[1] is not None:
+        avg_today_temp, avg_today_hum = row
+    else:
+        avg_today_temp = None
+        avg_today_hum = None
+
+    # 3) Average yesterday
+    cursor.execute("""
+        SELECT AVG(temperature), AVG(humidity)
+        FROM climate
+        WHERE date = date('now','localtime','-1 day')
+    """)
+    row = cursor.fetchone()
+    if row and row[0] is not None and row[1] is not None:
+        avg_yesterday_temp, avg_yesterday_hum = row
+    else:
+        avg_yesterday_temp = None
+        avg_yesterday_hum = None
+
+    # 4) Average last 30 days
+    cursor.execute("""
+        SELECT AVG(temperature), AVG(humidity)
+        FROM climate
+        WHERE date >= date('now','localtime','-30 day')
+          AND date <= date('now','localtime')
+    """)
+    row = cursor.fetchone()
+    if row and row[0] is not None and row[1] is not None:
+        avg_30days_temp, avg_30days_hum = row
+    else:
+        avg_30days_temp = None
+        avg_30days_hum = None
+
+    conn.close()
+
+    return {
+        "current_temp": current_temp,
+        "current_hum": current_hum,
+        "avg_today_temp": avg_today_temp,
+        "avg_today_hum": avg_today_hum,
+        "avg_yesterday_temp": avg_yesterday_temp,
+        "avg_yesterday_hum": avg_yesterday_hum,
+        "avg_30days_temp": avg_30days_temp,
+        "avg_30days_hum": avg_30days_hum,
+    }
 
 def generate_summary(period: str) -> str:
     """
@@ -594,20 +756,15 @@ def interpret_and_notify(app, data, bot_queue):
     # Updated validation to expect 6 bytes
     if not isinstance(bytes(data), (bytes, bytearray)) or len(data) != 6:
         print("Invalid input: Expected a 6-byte sequence.")
-        return  # Exit the function if input is invalid
+        return  # Exit if input is invalid
     
-
-    # Extracting bytes
+    # Extract bytes
     command = data[0]
     byte1 = data[1]
     byte2 = data[2]
     byte3 = data[3]
     byte4 = data[4]
-    byte5 = data[5]
-
-    # Example: byte4 is an additional status code
-    # You can adjust the handling based on the actual purpose of byte4
-    status_code = byte4
+    byte5 = data[5]  # leftover or status code if needed
 
     if command == 0xF1:  # Problems with lockers
         locker_id = byte1
@@ -623,11 +780,10 @@ def interpret_and_notify(app, data, bot_queue):
             body = f"Locker {locker_id}: Unknown issue (code {byte2})."
 
         message = {
-            "chat_id": None,  # Replace with actual chat ID
+            "chat_id": None,  # Broadcast to all
             "text": f"{subject}\n{body}"
         }
         bot_queue.put(message)
-        
 
     elif command == 0xF2:  # Problems with I2C devices
         locker_id = byte1
@@ -639,11 +795,8 @@ def interpret_and_notify(app, data, bot_queue):
         else:
             body = f"Locker {locker_id}: Unknown issue (code {byte2})."
 
-        # Incorporate the 6th byte (status_code) if necessary
-        #body += f" Status Code: {status_code}."
-
         message = {
-            "chat_id": None,  # Replace with actual chat ID
+            "chat_id": None,  
             "text": f"{subject}\n{body}"
         }
         bot_queue.put(message)
@@ -654,22 +807,76 @@ def interpret_and_notify(app, data, bot_queue):
         if byte2 == 50:
             body = f"Temperature below zero! Sensor {ventilation_object}!"
         elif byte2 == 100:
-            body = f"Sensor is disconected! Sensor {ventilation_object}!"
+            body = f"Sensor is disconnected! Sensor {ventilation_object}!"
         else:
             body = f"Ventilation object {ventilation_object}: Unknown issue (code {byte2})."
 
-        # Incorporate the 6th byte (status_code) if necessary
-        #body += f" Status Code: {status_code}."
-
         message = {
-            "chat_id": None,  # Replace with actual chat ID
+            "chat_id": None,  
             "text": f"{subject}\n{body}"
         }
         bot_queue.put(message)
 
+    elif command == 0xF4:
+        """
+        If command 0xF4 is received:
+        - byte[1] => sensor_number
+        - byte[2..3] => temperature * 100
+        - byte[4..5] => humidity * 100
+
+        Then log date/time, sensor_number, temperature, and humidity in logs/climate.db
+        """
+        sensor_number = byte1
+        
+        # Construct 16-bit integers from two bytes each for temp & humidity
+        temp_raw = (byte2 << 8) | byte3
+        hum_raw  = (byte4 << 8) | byte5
+        
+        # Convert to float with 2 decimals
+        temperature = temp_raw / 100.0
+        humidity    = hum_raw / 100.0
+        
+        # Create logs/climate.db if not exist, ensure climate table includes 'sensor'
+        climate_db_path = "logs/climate.db"
+        conn = sqlite3.connect(climate_db_path)
+        cursor = conn.cursor()
+        
+        # Attempt to add a 'sensor' column if it doesn't exist
+        # (If the table is brand-new, it will have it. If existing, we add safely.)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS climate (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                sensor INTEGER NOT NULL,
+                temperature REAL NOT NULL,
+                humidity REAL NOT NULL
+            )
+        """)
+        # In case the table existed without 'sensor' column, let's add it gracefully
+        try:
+            cursor.execute("ALTER TABLE climate ADD COLUMN sensor INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Means column already exists, ignore
+
+        # Insert the climate data
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
+        cursor.execute("""
+            INSERT INTO climate (date, time, sensor, temperature, humidity)
+            VALUES (?, ?, ?, ?, ?)
+        """, (date_str, time_str, sensor_number, temperature, humidity))
+
+        conn.commit()
+        conn.close()
+
+        print(f"[interpret_and_notify] Logged climate data (sensor {sensor_number}): "
+            f"{date_str} {time_str}, {temperature:.2f}°C, {humidity:.2f}%")
+
+
     else:
         print(f"Unknown command (0x{command:02X}).")
-
 
         
 
