@@ -122,7 +122,7 @@ class SPIHandler:
                 print("Sending dummy message...")
                 response = self.spi.xfer2(dummy_message)  # Send dummy message
                 time.sleep(0.1)
-                response = self.spi.xfer2([0x00] * 6)  # Receive 5 bytes
+                response = self.spi.xfer2([0x00] * 6)  # Receive 6 bytes
                 print(f"SPI Response: {response}")
                 interpret_and_notify(self.app, response, self.bot_queue)
         except Exception as e:
