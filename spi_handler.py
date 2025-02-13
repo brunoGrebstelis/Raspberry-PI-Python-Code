@@ -84,12 +84,14 @@ class SPIHandler:
         Thread to monitor GPIO pin state.
         """
         print("SPIHandler: Starting GPIO monitoring thread.")
+        last_pin_state = lgpio.gpio_read(self.chip, self.interrupt_pin)
         while self.running:
             if self.chip:
                 pin_state = lgpio.gpio_read(self.chip, self.interrupt_pin)
-                if pin_state == 1:  # GPIO is high
+                if pin_state != last_pin_state:  # GPIO is high
                     print(f"GPIO {self.interrupt_pin} is HIGH. Sending dummy message.")
                     self.send_dummy_and_read()
+                    last_pin_state = pin_state
             time.sleep(0.1)  # Adjust polling interval as needed
 
     def send_command(self, command, data):
