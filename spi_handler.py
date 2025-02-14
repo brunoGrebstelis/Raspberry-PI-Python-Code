@@ -1,7 +1,7 @@
 # Try to import spidev and lgpio for Raspberry Pi SPI and GPIO communication
 try:
     import spidev  # SPI library
-    import lgpio  # GPIO library for Raspberry Pi 5 compatibility
+    import lgpio   # GPIO library for Raspberry Pi 5 compatibility
 except ImportError:
     # Mock implementations for development/testing on non-Raspberry Pi systems
     class SpiDev:
@@ -88,44 +88,76 @@ class SPIHandler:
         while self.running:
             if self.chip:
                 pin_state = lgpio.gpio_read(self.chip, self.interrupt_pin)
-                if pin_state != last_pin_state:  # GPIO is high
-                    print(f"GPIO {self.interrupt_pin} is HIGH. Sending dummy message.")
+                # If the pin state changes (e.g. goes HIGH),
+                # we send a dummy message to read from the slave
+                if pin_state != last_pin_state:  
+                    print(f"GPIO {self.interrupt_pin} changed state. Sending dummy message.")
                     self.send_dummy_and_read()
                     last_pin_state = pin_state
             time.sleep(0.1)  # Adjust polling interval as needed
 
     def send_command(self, command, data):
+        """
+        Send a command to the SPI slave with the provided data.
+        Now protected by self.lock so it cannot overlap with send_dummy_and_read().
+        """
         if not self.spi:
             print("SPIHandler: SPI not initialized.")
             return
         try:
-            packet = [command] + data
-            self.spi.xfer2(packet)
+            with self.lock:  # Acquire the lock so no other SPI method can run at the same time
+                packet = [command] + data
+                print(f"SPIHandler: Sending command {packet}")
+                self.spi.xfer2(packet)
         except Exception as e:
             print(f"SPIHandler: Error during SPI transfer - {e}")
 
-    def set_led_color(self, locker_number, red, green, blue, mode = 0xFF):
+    def set_led_color(self, locker_number, red, green, blue, mode=0xFF):
+        """
+        Example convenience method that calls send_command()
+        to set LED color on a specific locker.
+        """
         self.send_command(0x01, [locker_number, red, green, blue, mode])
 
     def open_locker(self, locker_number):
+        """
+        Example convenience method that calls send_command()
+        to unlock a locker.
+        """
         self.send_command(0x03, [locker_number, 0xFF, 0xFF, 0xFF, 0xFF])
 
     def set_price(self, locker_number, price):
-        price_in_cents = int(price  )
-        self.send_command(0x02, [locker_number, (price_in_cents >> 8) & 0xFF, price_in_cents & 0xFF, 0xFF, 0xFF])
+        """
+        Example convenience method that calls send_command()
+        to set a price for a locker.
+        """
+        price_in_cents = int(price)
+        self.send_command(0x02, [
+            locker_number,
+            (price_in_cents >> 8) & 0xFF,
+            price_in_cents & 0xFF,
+            0xFF,
+            0xFF
+        ])
 
     def send_dummy_and_read(self):
+        """
+        Sends a dummy message and then reads the response.
+        Protected by self.lock so it cannot overlap with send_command().
+        """
         if not self.spi:
             print("SPIHandler: SPI not initialized.")
             return
         dummy_message = [0xFF] * 6
         try:
             with self.lock:
-                print("Sending dummy message...")
-                response = self.spi.xfer2(dummy_message)  # Send dummy message
+                print("SPIHandler: Sending dummy message...")
+                # First transaction (dummy out)
+                response = self.spi.xfer2(dummy_message)
                 time.sleep(0.1)
-                response = self.spi.xfer2([0x00] * 6)  # Receive 6 bytes
-                print(f"SPI Response: {response}")
+                # Second transaction to read
+                response = self.spi.xfer2([0x00] * 6)
+                print(f"SPIHandler: SPI Response: {response}")
                 interpret_and_notify(self.app, response, self.bot_queue)
         except Exception as e:
             print(f"SPIHandler: Error during SPI communication - {e}")
