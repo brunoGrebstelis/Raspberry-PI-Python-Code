@@ -546,29 +546,10 @@ def generate_climate_csv_file(period: str) -> Optional[str]:
 
 
 def get_climate_stats():
-    """
-    Returns a dict with:
-      {
-        "current_temp": ... or None,
-        "current_hum": ... or None,
-        "avg_today_temp": ... or None,
-        "avg_today_hum": ... or None,
-        "avg_yesterday_temp": ... or None,
-        "avg_yesterday_hum": ... or None,
-        "avg_30days_temp": ... or None,
-        "avg_30days_hum": ... or None
-      }
-
-    If there's no data for a particular period, the value is None.
-    """
-    import sqlite3
-    import os
-    from datetime import datetime
 
     # Ensure the DB exists
     db_path = "logs/climate.db"
     if not os.path.exists(db_path):
-        # No climate DB => definitely no data
         return {
             "current_temp": None,
             "current_hum": None,
@@ -583,63 +564,65 @@ def get_climate_stats():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # 1) Current reading (take the last row by id desc)
-    cursor.execute(
-        "SELECT temperature, humidity FROM climate ORDER BY id DESC LIMIT 1"
-    )
+    # Get the last recorded sensor ID
+    cursor.execute("SELECT sensor FROM climate ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
     if row:
-        current_temp, current_hum = row
+        last_sensor = row[0]
     else:
-        current_temp = None
-        current_hum = None
+        conn.close()
+        return {
+            "current_temp": None,
+            "current_hum": None,
+            "avg_today_temp": None,
+            "avg_today_hum": None,
+            "avg_yesterday_temp": None,
+            "avg_yesterday_hum": None,
+            "avg_30days_temp": None,
+            "avg_30days_hum": None,
+        }
 
-    # 2) Average today
-    cursor.execute("""
-        SELECT AVG(temperature), AVG(humidity)
-        FROM climate
-        WHERE date = date('now','localtime')
-    """)
+    # 1) Current reading (from sensor 1 specifically)
+    cursor.execute(
+        "SELECT temperature, humidity FROM climate WHERE sensor = 1 ORDER BY id DESC LIMIT 1"
+    )
     row = cursor.fetchone()
-    if row and row[0] is not None and row[1] is not None:
-        avg_today_temp, avg_today_hum = row
-    else:
-        avg_today_temp = None
-        avg_today_hum = None
+    current_temp, current_hum = row if row else (None, None)
 
-    # 3) Average yesterday
+    # 2) Average today (from last recorded sensor)
     cursor.execute("""
         SELECT AVG(temperature), AVG(humidity)
         FROM climate
-        WHERE date = date('now','localtime','-1 day')
-    """)
+        WHERE sensor = ? AND date = date('now','localtime')
+    """, (last_sensor,))
     row = cursor.fetchone()
-    if row and row[0] is not None and row[1] is not None:
-        avg_yesterday_temp, avg_yesterday_hum = row
-    else:
-        avg_yesterday_temp = None
-        avg_yesterday_hum = None
+    avg_today_temp, avg_today_hum = row if row and row[0] is not None else (None, None)
 
-    # 4) Average last 30 days
+    # 3) Average yesterday (from last recorded sensor)
     cursor.execute("""
         SELECT AVG(temperature), AVG(humidity)
         FROM climate
-        WHERE date >= date('now','localtime','-30 day')
+        WHERE sensor = ? AND date = date('now','localtime','-1 day')
+    """, (last_sensor,))
+    row = cursor.fetchone()
+    avg_yesterday_temp, avg_yesterday_hum = row if row and row[0] is not None else (None, None)
+
+    # 4) Average last 30 days (from last recorded sensor)
+    cursor.execute("""
+        SELECT AVG(temperature), AVG(humidity)
+        FROM climate
+        WHERE sensor = ? AND date >= date('now','localtime','-30 day')
           AND date <= date('now','localtime')
-    """)
+    """, (last_sensor,))
     row = cursor.fetchone()
-    if row and row[0] is not None and row[1] is not None:
-        avg_30days_temp, avg_30days_hum = row
-    else:
-        avg_30days_temp = None
-        avg_30days_hum = None
+    avg_30days_temp, avg_30days_hum = row if row and row[0] is not None else (None, None)
 
     conn.close()
 
     return {
-        "current_temp": current_temp,
-        "current_hum": current_hum,
-        "avg_today_temp": avg_today_temp,
+        "current_temp": current_temp,  # Always from sensor 1
+        "current_hum": current_hum,    # Always from sensor 1
+        "avg_today_temp": avg_today_temp,  # From last recorded sensor
         "avg_today_hum": avg_today_hum,
         "avg_yesterday_temp": avg_yesterday_temp,
         "avg_yesterday_hum": avg_yesterday_hum,
@@ -770,7 +753,7 @@ def interpret_and_notify(app, data, bot_queue):
         locker_id = byte1
         subject = '❗️"Problems with Locker"❗️'
         if byte2 == 50:
-            body = f"Locker {locker_id}: Has been opened for 5 minutes."
+            body = f"Locker {locker_id}: Has been opened for 1 minute."
         elif byte2 == 100:
             body = f"Locker {locker_id}: Free space."
         elif byte2 == 150:

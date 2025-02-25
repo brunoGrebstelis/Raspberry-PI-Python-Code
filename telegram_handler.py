@@ -394,8 +394,8 @@ class TelegramBotHandler:
 
         # 4) Fallback if no manual entry is in progress.
         await self._retry(
-            update.message.reply_text,
-            f"You said: {update.message.text}"
+            #update.message.reply_text,
+            #f"You said: {update.message.text}"
         )
 
 
