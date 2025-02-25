@@ -39,6 +39,7 @@ class AdminOptionsFrame(tk.Frame):
         :param timeout: Timeout duration in milliseconds.
         """
         super().__init__(master, bg="#F0F0F0")
+        self.config(width=1200, height=1100)
         self.master = master
         self.locker_id = locker_id
         self.unlock_callback = unlock_callback
@@ -53,10 +54,13 @@ class AdminOptionsFrame(tk.Frame):
         self.timeout = timeout
         self.last_interaction = None
 
+        self.pack_propagate(False)  # or self.grid_propagate(False) if using grid
+        self.grid_propagate(False)
+
         # Configure grid layout
         self.grid_rowconfigure(0, weight=0)  # For the "X" button
         self.grid_rowconfigure(1, weight=1)  # For the label
-        for i in range(2, 8):  # We’ll have more rows now
+        for i in range(2, 10):  # We’ll have more rows now
             self.grid_rowconfigure(i, weight=1)
         for i in range(2):
             self.grid_columnconfigure(i, weight=1)
@@ -81,8 +85,9 @@ class AdminOptionsFrame(tk.Frame):
             ("Change Price",       self.on_change_price),
             ("Change Color",       self.on_change_color),
             ("Change All Colors",  self.on_change_all_color),
-            ("Lock The order",     self.on_lock_order),      # NEW
-            ("Set Lighting mode",  self.on_set_lighting_mode),  # NEW BUTTON
+            ("Lock The order",     self.on_lock_order),      
+            ("Set Lighting mode",  self.on_set_lighting_mode),  
+            ("Ventilation",        self.on_ventilation),
             ("Close Program",      self.on_close_program),
         ]
 
@@ -90,8 +95,8 @@ class AdminOptionsFrame(tk.Frame):
             button = tk.Button(
                 self, text=text, font=("Arial", 27), command=command
             )
-            # Make them a bit less thick (adjust width/height as needed)
-            button.config(width=40, height=2)
+            # Adjust the width a bit:
+            button.config(width=33, height=2)
             button.grid(row=idx, column=0, columnspan=2, padx=30, pady=10, sticky="nsew")
 
         # Bind interactions within the frame to reset the timeout
@@ -150,6 +155,12 @@ class AdminOptionsFrame(tk.Frame):
         # Show the new LightingModeFrame
         if hasattr(self.master, "lighting_mode_frame"):
             self.master.lighting_mode_frame.show(self.locker_id)
+        self.hide()
+
+    def on_ventilation(self):
+        self.reset_timeout()
+        if hasattr(self.master, "ventilation_frame"):
+            self.master.ventilation_frame.show()
         self.hide()
 
     def on_close(self):
@@ -1423,4 +1434,228 @@ class LightingModeFrame(tk.Frame):
 
     def on_timeout(self):
         """Handle frame closure on timeout."""
+        self.hide()
+
+
+class VentilationFrame(tk.Frame):
+    """
+    A large frame (similar in size to PinEntryFrame) that manages 
+    4 toggle switches: Fan1, Fan2, Fan3, and Auto.
+    """
+    def __init__(self, master, spi_handler, timeout=60000):
+        super().__init__(master, bg="#F0F0F0")
+        self.master = master
+        self.spi_handler = spi_handler
+        self.timeout = timeout
+        self.last_interaction = None
+
+        # Force a big size so it resembles the PinEntryFrame
+        self.config(width=1000, height=700)
+        # Prevent automatic shrinking
+        self.pack_propagate(False)
+        self.grid_propagate(False)
+
+        # Grid layout
+        self.grid_rowconfigure(0, weight=0)  # row for "X"
+        self.grid_rowconfigure(1, weight=0)  # row for Title
+        self.grid_rowconfigure(2, weight=1)  # row for toggles
+        self.grid_rowconfigure(3, weight=0)  # row for Save
+        for c in range(2):
+            self.grid_columnconfigure(c, weight=1)
+
+        # ---- Top-Right Close "X" ----
+        self.close_button = tk.Button(
+            self, text="X", command=self.on_close,
+            font=("Arial", 27, "bold"), bd=0,
+            bg="#F0F0F0", activebackground="#F0F0F0",
+            width=4, height=2
+        )
+        self.close_button.grid(row=0, column=1, sticky="ne", padx=20, pady=20)
+
+        # ---- Title label ----
+        self.title_label = tk.Label(
+            self,
+            text="Ventilation Control",
+            font=("Arial", 36, "bold"),
+            bg="#F0F0F0"
+        )
+        self.title_label.grid(row=1, column=0, columnspan=2, pady=10)
+
+        # We track the on/off states for Fan1, Fan2, Fan3, Auto
+        self.fan1_on = False
+        self.fan2_on = False
+        self.fan3_on = False
+        self.auto_on = False
+
+        # Container for the big toggle rows
+        toggles_frame = tk.Frame(self, bg="#F0F0F0")
+        toggles_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=30, pady=30)
+
+        # Let each row/column expand
+        for r in range(4):
+            toggles_frame.grid_rowconfigure(r, weight=1)
+        for c in range(2):
+            toggles_frame.grid_columnconfigure(c, weight=1)
+
+        # Create the toggle rows
+        # We pass an internal callback to handle toggling logic.
+        self.fan1_switch = self.create_toggle_row(toggles_frame, 0, "Fan 1", self.toggle_fan1)
+        self.fan2_switch = self.create_toggle_row(toggles_frame, 1, "Fan 2", self.toggle_fan2)
+        self.fan3_switch = self.create_toggle_row(toggles_frame, 2, "Fan 3", self.toggle_fan3)
+        self.auto_switch = self.create_toggle_row(toggles_frame, 3, "Auto",  self.toggle_auto)
+
+        # ---- Save button ----
+        self.save_button = tk.Button(
+            self, text="Save", font=("Arial", 27),
+            command=self.on_save
+        )
+        self.save_button.config(width=8, height=2)
+        self.save_button.grid(row=3, column=1, sticky="e", padx=20, pady=20)
+
+        # Bind interactions for auto-close
+        self.bind_all("<Button-1>", self.reset_timeout)
+        self.reset_timeout()
+
+    def create_toggle_row(self, parent, row_index, label_text, toggle_func):
+        """
+        Creates a single row with a label and a toggle switch button.
+        Returns the toggle button so we can update its text/color.
+        """
+        # The label on the left
+        lbl = tk.Label(
+            parent, text=label_text,
+            font=("Arial", 36), bg="#F0F0F0"
+        )
+        lbl.grid(row=row_index, column=0, sticky="e", padx=10)
+
+        # The "switch" is just a Button we color differently for ON/OFF
+        btn = tk.Button(
+            parent,
+            text="OFF",
+            font=("Arial", 36),
+            width=6,  # big enough to show "ON"/"OFF"
+            bg="red",
+            fg="white",
+            activebackground="red",
+            command=toggle_func
+        )
+        btn.grid(row=row_index, column=1, sticky="w", padx=10)
+
+        return btn
+
+    # ------------------- Toggling Logic -------------------
+
+    def toggle_fan1(self):
+        # If Auto is ON, turning fan on => auto must go off.
+        if self.auto_on:
+            # turn auto off
+            self.auto_on = False
+            self.update_switch(self.auto_switch, self.auto_on)
+        # Flip fan1
+        self.fan1_on = not self.fan1_on
+        self.update_switch(self.fan1_switch, self.fan1_on)
+
+    def toggle_fan2(self):
+        if self.auto_on:
+            self.auto_on = False
+            self.update_switch(self.auto_switch, self.auto_on)
+        self.fan2_on = not self.fan2_on
+        self.update_switch(self.fan2_switch, self.fan2_on)
+
+    def toggle_fan3(self):
+        if self.auto_on:
+            self.auto_on = False
+            self.update_switch(self.auto_switch, self.auto_on)
+        self.fan3_on = not self.fan3_on
+        self.update_switch(self.fan3_switch, self.fan3_on)
+
+    def toggle_auto(self):
+        # If user toggles auto, set auto_on = not auto_on
+        # If auto_on goes True => fans must turn off
+        self.auto_on = not self.auto_on
+        self.update_switch(self.auto_switch, self.auto_on)
+
+        if self.auto_on:
+            # turn off the fans
+            self.fan1_on = False
+            self.fan2_on = False
+            self.fan3_on = False
+            self.update_switch(self.fan1_switch, self.fan1_on)
+            self.update_switch(self.fan2_switch, self.fan2_on)
+            self.update_switch(self.fan3_switch, self.fan3_on)
+
+    def update_switch(self, switch_btn, is_on):
+        """Update the text/color of the switch button for ON/OFF states."""
+        if is_on:
+            switch_btn.config(text="ON", bg="green", activebackground="green")
+        else:
+            switch_btn.config(text="OFF", bg="red", activebackground="red")
+
+    # ------------------- Saving the Mode -------------------
+
+    def on_save(self):
+        """
+        Determine the correct mode from the states, then call:
+          self.spi_handler.send_command(0x04, [mode, 0xFF, 0xFF, 0xFF, 0xFF])
+        """
+        # If auto is ON => mode=255
+        if self.auto_on:
+            mode = 255
+        else:
+            # Based on which fans are on:
+            f1, f2, f3 = self.fan1_on, self.fan2_on, self.fan3_on
+            # Convert booleans to your enumerations
+            #   none => 0
+            #   (1) => 1, (2) => 2, (3) => 3
+            #   (1,2) => 4, (1,3) => 5, (2,3) => 6, (1,2,3) => 7
+            if not (f1 or f2 or f3):
+                mode = 0
+            elif f1 and not f2 and not f3:
+                mode = 1
+            elif f2 and not f1 and not f3:
+                mode = 2
+            elif f3 and not f1 and not f2:
+                mode = 3
+            elif f1 and f2 and not f3:
+                mode = 4
+            elif f1 and f3 and not f2:
+                mode = 5
+            elif f2 and f3 and not f1:
+                mode = 6
+            elif f1 and f2 and f3:
+                mode = 7
+            else:
+                mode = 0  # fallback
+
+        print(f"[VentilationFrame] mode = {mode}")
+        if self.spi_handler:
+            self.spi_handler.send_command(0x04, [mode, 0xFF, 0xFF, 0xFF, 0xFF])
+
+        self.hide()
+
+    # ------------------- Show / Hide / Timeout -------------------
+
+    def on_close(self):
+        self.hide()
+
+    def show(self):
+        """Display the frame centered, large enough to match PinEntryFrame style."""
+        self.place(relx=0.5, rely=0.5, anchor="center")
+        self.lift()
+        self.focus_set()
+        self.reset_timeout()
+
+    def hide(self):
+        """Hide the frame and cancel any timeout."""
+        self.place_forget()
+        if self.last_interaction:
+            self.after_cancel(self.last_interaction)
+            self.last_interaction = None
+
+    def reset_timeout(self, event=None):
+        if self.last_interaction:
+            self.after_cancel(self.last_interaction)
+        self.last_interaction = self.after(self.timeout, self.on_timeout)
+
+    def on_timeout(self):
         self.hide()

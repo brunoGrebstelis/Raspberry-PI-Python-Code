@@ -109,7 +109,7 @@ class SPIHandler:
                 packet = [command] + data
                 print(f"SPIHandler: Sending command {packet}")
                 self.spi.xfer2(packet)
-        except Exception as e:
+        except Exception as e:  
             print(f"SPIHandler: Error during SPI transfer - {e}")
 
     def set_led_color(self, locker_number, red, green, blue, mode=0xFF):

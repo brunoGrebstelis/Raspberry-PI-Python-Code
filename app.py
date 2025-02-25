@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import messagebox, TclError
 import time
 import os
-from admin_frames import AdminOptionsFrame, PriceEntryFrame, InformationFrame, RGBEntryFrame, PaymentPopupFrame, PinEntryFrame, SetPinFrame, LightingModeFrame
+from admin_frames import AdminOptionsFrame, PriceEntryFrame, InformationFrame, RGBEntryFrame, PaymentPopupFrame, PinEntryFrame, SetPinFrame, LightingModeFrame, VentilationFrame
 from utils import load_locker_data, save_locker_data, send_command, log_event
 from spi_handler import SPIHandler
 from scheduler import Scheduler
@@ -121,8 +121,14 @@ class VendingMachineApp(tk.Tk):
             #messagebox.showerror("Error", f"MDB Initialization Failed: {e}")
             self.mdb_handler = None
 
-        # Create custom title bar
-        #create_title_bar(self)
+
+        self.ventilation_frame = VentilationFrame(
+            master=self,
+            spi_handler=self.spi_handler,  # if SPI is available
+            timeout=60000
+        )
+        self.ventilation_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.ventilation_frame.hide()
 
 
 
