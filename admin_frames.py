@@ -1487,6 +1487,8 @@ class VentilationFrame(tk.Frame):
         self.fan3_on = False
         self.auto_on = False
 
+        self.first_time = True
+
         # Container for the big toggle rows
         toggles_frame = tk.Frame(self, bg="#F0F0F0")
         toggles_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=30, pady=30)
@@ -1640,6 +1642,18 @@ class VentilationFrame(tk.Frame):
 
     def show(self):
         """Display the frame centered, large enough to match PinEntryFrame style."""
+        if self.first_time:
+            self.first_time = False
+            self.fan1_on = False
+            self.fan2_on = False
+            self.fan3_on = False
+            self.auto_on = True
+            # Update the toggle buttons:
+            self.update_switch(self.fan1_switch, self.fan1_on)
+            self.update_switch(self.fan2_switch, self.fan2_on)
+            self.update_switch(self.fan3_switch, self.fan3_on)
+            self.update_switch(self.auto_switch, self.auto_on)
+
         self.place(relx=0.5, rely=0.5, anchor="center")
         self.lift()
         self.focus_set()
