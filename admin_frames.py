@@ -5,6 +5,7 @@ import json
 from gui import BG_COLOR, GREEN_COLOR, TAG_COLOR
 import sys
 import time
+import os
 
 class AdminOptionsFrame(tk.Frame):
     def __init__(
@@ -1441,7 +1442,14 @@ class VentilationFrame(tk.Frame):
     """
     A large frame (similar in size to PinEntryFrame) that manages 
     4 toggle switches: Fan1, Fan2, Fan3, and Auto.
+
+    - Reads logs/fan.txt (creating if missing) in show().
+    - Applies that mode to toggles.
+    - When any toggle is pressed, we immediately compute the new mode,
+      send it via SPI, and update logs/fan.txt.
+    - Pressing "Save" also does the same, then hides the frame.
     """
+
     def __init__(self, master, spi_handler, timeout=60000):
         super().__init__(master, bg="#F0F0F0")
         self.master = master
@@ -1487,8 +1495,6 @@ class VentilationFrame(tk.Frame):
         self.fan3_on = False
         self.auto_on = False
 
-        self.first_time = True
-
         # Container for the big toggle rows
         toggles_frame = tk.Frame(self, bg="#F0F0F0")
         toggles_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=30, pady=30)
@@ -1504,7 +1510,7 @@ class VentilationFrame(tk.Frame):
         self.fan1_switch = self.create_toggle_row(toggles_frame, 0, "Fan 1", self.toggle_fan1)
         self.fan2_switch = self.create_toggle_row(toggles_frame, 1, "Fan 2", self.toggle_fan2)
         self.fan3_switch = self.create_toggle_row(toggles_frame, 2, "Fan 3", self.toggle_fan3)
-        self.auto_switch = self.create_toggle_row(toggles_frame, 3, "Auto",  self.toggle_auto)
+        self.auto_switch = self.create_toggle_row(toggles_frame, 3, "Auto", self.toggle_auto)
 
         # ---- Save button ----
         self.save_button = tk.Button(
@@ -1545,31 +1551,40 @@ class VentilationFrame(tk.Frame):
 
         return btn
 
-    # ------------------- Toggling Logic -------------------
+    # ------------------- Toggling Logic + Immediate SPI Send -------------------
 
     def toggle_fan1(self):
         # If Auto is ON, turning fan on => auto must go off.
         if self.auto_on:
-            # turn auto off
             self.auto_on = False
             self.update_switch(self.auto_switch, self.auto_on)
+
         # Flip fan1
         self.fan1_on = not self.fan1_on
         self.update_switch(self.fan1_switch, self.fan1_on)
+
+        # Immediately update & send to SPI
+        self._update_and_send()
 
     def toggle_fan2(self):
         if self.auto_on:
             self.auto_on = False
             self.update_switch(self.auto_switch, self.auto_on)
+
         self.fan2_on = not self.fan2_on
         self.update_switch(self.fan2_switch, self.fan2_on)
+
+        self._update_and_send()
 
     def toggle_fan3(self):
         if self.auto_on:
             self.auto_on = False
             self.update_switch(self.auto_switch, self.auto_on)
+
         self.fan3_on = not self.fan3_on
         self.update_switch(self.fan3_switch, self.fan3_on)
+
+        self._update_and_send()
 
     def toggle_auto(self):
         # If user toggles auto, set auto_on = not auto_on
@@ -1578,13 +1593,14 @@ class VentilationFrame(tk.Frame):
         self.update_switch(self.auto_switch, self.auto_on)
 
         if self.auto_on:
-            # turn off the fans
             self.fan1_on = False
             self.fan2_on = False
             self.fan3_on = False
             self.update_switch(self.fan1_switch, self.fan1_on)
             self.update_switch(self.fan2_switch, self.fan2_on)
             self.update_switch(self.fan3_switch, self.fan3_on)
+
+        self._update_and_send()
 
     def update_switch(self, switch_btn, is_on):
         """Update the text/color of the switch button for ON/OFF states."""
@@ -1593,47 +1609,61 @@ class VentilationFrame(tk.Frame):
         else:
             switch_btn.config(text="OFF", bg="red", activebackground="red")
 
-    # ------------------- Saving the Mode -------------------
+    # ------------------- on_save + Immediate Updates -------------------
 
     def on_save(self):
         """
-        Determine the correct mode from the states, then call:
-          self.spi_handler.send_command(0x04, [mode, 0xFF, 0xFF, 0xFF, 0xFF])
+        This still does the same logic:
+          1) compute mode from toggles
+          2) send via SPI
+          3) write logs/fan.txt
+          4) hide()
         """
-        # If auto is ON => mode=255
-        if self.auto_on:
-            mode = 255
-        else:
-            # Based on which fans are on:
-            f1, f2, f3 = self.fan1_on, self.fan2_on, self.fan3_on
-            # Convert booleans to your enumerations
-            #   none => 0
-            #   (1) => 1, (2) => 2, (3) => 3
-            #   (1,2) => 4, (1,3) => 5, (2,3) => 6, (1,2,3) => 7
-            if not (f1 or f2 or f3):
-                mode = 0
-            elif f1 and not f2 and not f3:
-                mode = 1
-            elif f2 and not f1 and not f3:
-                mode = 2
-            elif f3 and not f1 and not f2:
-                mode = 3
-            elif f1 and f2 and not f3:
-                mode = 4
-            elif f1 and f3 and not f2:
-                mode = 5
-            elif f2 and f3 and not f1:
-                mode = 6
-            elif f1 and f2 and f3:
-                mode = 7
-            else:
-                mode = 0  # fallback
-
+        mode = self._compute_mode_from_toggles()
         print(f"[VentilationFrame] mode = {mode}")
+
         if self.spi_handler:
             self.spi_handler.send_command(0x04, [mode, 0xFF, 0xFF, 0xFF, 0xFF])
 
+        self._write_fan_file(mode)
         self.hide()
+
+    def _update_and_send(self):
+        """
+        Whenever a toggle changes, we compute the new mode,
+        send it over SPI, and save to fan.txt immediately.
+        """
+        mode = self._compute_mode_from_toggles()
+        print(f"[VentilationFrame] Toggled => mode = {mode}")
+
+        if self.spi_handler:
+            self.spi_handler.send_command(0x04, [mode, 0xFF, 0xFF, 0xFF, 0xFF])
+
+        self._write_fan_file(mode)
+
+    def _compute_mode_from_toggles(self):
+        """Compute (0..7, 255) based on fan1_on, fan2_on, fan3_on, auto_on."""
+        if self.auto_on:
+            return 255
+        f1, f2, f3 = self.fan1_on, self.fan2_on, self.fan3_on
+        if not (f1 or f2 or f3):
+            return 0
+        elif f1 and not f2 and not f3:
+            return 1
+        elif f2 and not f1 and not f3:
+            return 2
+        elif f3 and not f1 and not f2:
+            return 3
+        elif f1 and f2 and not f3:
+            return 4
+        elif f1 and f3 and not f2:
+            return 5
+        elif f2 and f3 and not f1:
+            return 6
+        elif f1 and f2 and f3:
+            return 7
+        else:
+            return 0  # fallback
 
     # ------------------- Show / Hide / Timeout -------------------
 
@@ -1641,19 +1671,9 @@ class VentilationFrame(tk.Frame):
         self.hide()
 
     def show(self):
-        """Display the frame centered, large enough to match PinEntryFrame style."""
-        if self.first_time:
-            self.first_time = False
-            self.fan1_on = False
-            self.fan2_on = False
-            self.fan3_on = False
-            self.auto_on = True
-            # Update the toggle buttons:
-            self.update_switch(self.fan1_switch, self.fan1_on)
-            self.update_switch(self.fan2_switch, self.fan2_on)
-            self.update_switch(self.fan3_switch, self.fan3_on)
-            self.update_switch(self.auto_switch, self.auto_on)
-
+        """Read logs/fan.txt, apply it, then display the frame."""
+        saved_mode = self._read_fan_file()
+        self._apply_mode_to_toggles(saved_mode)
         self.place(relx=0.5, rely=0.5, anchor="center")
         self.lift()
         self.focus_set()
@@ -1673,3 +1693,87 @@ class VentilationFrame(tk.Frame):
 
     def on_timeout(self):
         self.hide()
+
+    # ------------------- File I/O Helpers -------------------
+
+    def _read_fan_file(self):
+        """
+        Reads a single integer from logs/fan.txt. If the file doesn't exist,
+        creates it with '0' and returns 0.
+        """
+        path = "logs/fan.txt"
+        if not os.path.exists(path):
+            with open(path, "w") as f:
+                f.write("0\n")
+            return 0
+
+        try:
+            with open(path, "r") as f:
+                return int(f.read().strip())
+        except:
+            return 0
+
+    def _write_fan_file(self, mode):
+        """
+        Writes the given mode (0..7 or 255) to logs/fan.txt.
+        """
+        path = "logs/fan.txt"
+        with open(path, "w") as f:
+            f.write(f"{mode}\n")
+
+    def _apply_mode_to_toggles(self, mode):
+        """
+        Given a mode integer (0..7 or 255),
+        set (fan1_on, fan2_on, fan3_on, auto_on) accordingly,
+        and update the switch buttons.
+        """
+        if mode == 255:
+            self.auto_on = True
+            self.fan1_on = False
+            self.fan2_on = False
+            self.fan3_on = False
+        else:
+            self.auto_on = False
+            if mode == 0:
+                self.fan1_on = False
+                self.fan2_on = False
+                self.fan3_on = False
+            elif mode == 1:
+                self.fan1_on = True
+                self.fan2_on = False
+                self.fan3_on = False
+            elif mode == 2:
+                self.fan1_on = False
+                self.fan2_on = True
+                self.fan3_on = False
+            elif mode == 3:
+                self.fan1_on = False
+                self.fan2_on = False
+                self.fan3_on = True
+            elif mode == 4:
+                self.fan1_on = True
+                self.fan2_on = True
+                self.fan3_on = False
+            elif mode == 5:
+                self.fan1_on = True
+                self.fan2_on = False
+                self.fan3_on = True
+            elif mode == 6:
+                self.fan1_on = False
+                self.fan2_on = True
+                self.fan3_on = True
+            elif mode == 7:
+                self.fan1_on = True
+                self.fan2_on = True
+                self.fan3_on = True
+            else:
+                # fallback => everything off
+                self.fan1_on = False
+                self.fan2_on = False
+                self.fan3_on = False
+
+        # Update the actual toggle buttons
+        self.update_switch(self.fan1_switch, self.fan1_on)
+        self.update_switch(self.fan2_switch, self.fan2_on)
+        self.update_switch(self.fan3_switch, self.fan3_on)
+        self.update_switch(self.auto_switch, self.auto_on)
