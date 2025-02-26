@@ -14,8 +14,7 @@ from gui import (
     load_images, 
     create_locker_buttons, 
     create_pay_button,
-    create_close_button,
-    create_title_bar,
+
     BG_COLOR,
     GREEN_COLOR,
     TAG_COLOR
@@ -100,6 +99,7 @@ class VendingMachineApp(tk.Tk):
             print("SPI initialized successfully.")
             self.transfer_rgb_to_stm32()
             self.transfer_prices_to_stm32()
+            self.transfer_fan_mode_from_file()
 
             # Assign SPI handler to RGBEntryFrame and AdminOptionsFrame
             self.rgb_entry_frame.spi_handler = self.spi_handler
@@ -580,6 +580,28 @@ class VendingMachineApp(tk.Tk):
                 time.sleep(0.05)
         else:
             print("SPI is disabled, skipping RGB transfer.")
+
+    def transfer_fan_mode_from_file(self):
+        """Reads logs/fan.txt, if missing => create with '0', 
+        then sends that value via SPI command 0x04.
+        """
+        fan_file = "logs/fan.txt"
+        if not os.path.exists(fan_file):
+            # Create with default 0
+            with open(fan_file, "w") as f:
+                f.write("0\n")
+            mode = 0
+        else:
+            try:
+                with open(fan_file, "r") as f:
+                    text = f.read().strip()
+                    mode = int(text)
+            except:
+                mode = 0  # fallback
+
+        print(f"[App] Sending fan mode {mode} from file 'fan.txt' via SPI")
+        if self.spi_handler:
+            self.spi_handler.send_command(0x04, [mode, 0xFF, 0xFF, 0xFF, 0xFF])
 
 
 
