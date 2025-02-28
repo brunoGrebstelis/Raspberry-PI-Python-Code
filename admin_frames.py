@@ -455,11 +455,6 @@ class RGBEntryFrame(tk.Frame):
     def __init__(self, master, locker_id, spi_handler, timeout=60000):
         """
         Initialize the RGBEntryFrame.
-
-        :param master: Parent widget.
-        :param locker_id: ID of the locker.
-        :param spi_handler: SPI handler object.
-        :param timeout: Timeout duration in milliseconds.
         """
         super().__init__(master, bg="#F0F0F0")
         self.master = master
@@ -470,6 +465,8 @@ class RGBEntryFrame(tk.Frame):
 
         # Prevent frame from resizing based on its content
         self.pack_propagate(False)
+        # --- Modified: Set a larger fixed size for the frame ---
+        self.config(width=600, height=400)
 
         # Configure grid layout (closely matching original)
         self.grid_rowconfigure(0, weight=0)  # Title + default color buttons + "X"
@@ -515,8 +512,6 @@ class RGBEntryFrame(tk.Frame):
         # ---------- Frame for R, G, B (Labels, Entries, Scales) ----------
         input_frame = tk.Frame(self, bg="#F0F0F0")
         input_frame.grid(row=1, column=0, columnspan=3, pady=10, padx=40, sticky="nsew")
-
-        # Let column 2 stretch so the Scale can fill horizontally
         input_frame.grid_columnconfigure(2, weight=1)
 
         # StringVars to hold RGB values
@@ -537,11 +532,10 @@ class RGBEntryFrame(tk.Frame):
             width=3
         )
         self.red_entry.grid(row=0, column=1, sticky="w", padx=(10, 20))
-
-        # Bind focus-in and focus-out for clearing/clamping
         self.red_entry.bind("<FocusIn>", self.on_entry_focus_in)
         self.red_entry.bind("<FocusOut>", self.on_entry_focus_out)
 
+        # --- Modified: Increase slider size (width and sliderlength) ---
         self.red_scale = tk.Scale(
             input_frame,
             from_=0, to=255,
@@ -549,8 +543,8 @@ class RGBEntryFrame(tk.Frame):
             command=self.on_red_scale,
             troughcolor="white",
             bg="#F0F0F0",
-            width=40,       # thickness of the trough
-            sliderlength=40 # length of the slider
+            width=60,
+            sliderlength=60
         )
         self.red_scale.config(fg="red", highlightthickness=0)
         self.red_scale.grid(row=0, column=2, sticky="ew", padx=(0, 20))
@@ -568,7 +562,6 @@ class RGBEntryFrame(tk.Frame):
             width=3
         )
         self.green_entry.grid(row=1, column=1, sticky="w", padx=(10, 20))
-
         self.green_entry.bind("<FocusIn>", self.on_entry_focus_in)
         self.green_entry.bind("<FocusOut>", self.on_entry_focus_out)
 
@@ -579,8 +572,8 @@ class RGBEntryFrame(tk.Frame):
             command=self.on_green_scale,
             troughcolor="white",
             bg="#F0F0F0",
-            width=40,
-            sliderlength=40
+            width=60,
+            sliderlength=60
         )
         self.green_scale.config(fg="green", highlightthickness=0)
         self.green_scale.grid(row=1, column=2, sticky="ew", padx=(0, 20))
@@ -598,7 +591,6 @@ class RGBEntryFrame(tk.Frame):
             width=3
         )
         self.blue_entry.grid(row=2, column=1, sticky="w", padx=(10, 20))
-
         self.blue_entry.bind("<FocusIn>", self.on_entry_focus_in)
         self.blue_entry.bind("<FocusOut>", self.on_entry_focus_out)
 
@@ -609,16 +601,15 @@ class RGBEntryFrame(tk.Frame):
             command=self.on_blue_scale,
             troughcolor="white",
             bg="#F0F0F0",
-            width=40,
-            sliderlength=40
+            width=60,
+            sliderlength=60
         )
         self.blue_scale.config(fg="blue", highlightthickness=0)
         self.blue_scale.grid(row=2, column=2, sticky="ew", padx=(0, 20))
 
         # ---------- Default color buttons (including the 'current' color) ----------
-        # Exactly 6 total (the first is 'Current')
         self.default_colors = [
-            ("Current", None),            # Will show the user's current color
+            ("Current", None),
             ("Red", (255, 0, 0)),
             ("Green", (0, 255, 0)),
             ("Blue", (0, 0, 255)),
@@ -630,22 +621,16 @@ class RGBEntryFrame(tk.Frame):
         for idx, (color_name, rgb_tuple) in enumerate(self.default_colors):
             btn = tk.Button(
                 preset_frame,
-                text="",  # no text, just color
+                text="",
                 width=4,
                 height=2,
                 command=lambda r=rgb_tuple: self.set_color_from_button(r)
             )
-
-            # For default colors: apply gamma correction so they look more like real LEDs
             if rgb_tuple is None:
-                # "Current" button starts white (will update automatically)
                 hexcolor = "#ffffff"
             else:
                 r_raw, g_raw, b_raw = rgb_tuple
-                hexcolor = rgb_to_hex(r_raw, g_raw, b_raw)  # default gamma=2.2
-                # Actually, pass the third channel
                 hexcolor = rgb_to_hex(r_raw, g_raw, b_raw)
-
             btn.config(bg=hexcolor, activebackground=hexcolor)
             btn.grid(row=0, column=idx, padx=10, sticky="e")
             self.color_buttons.append(btn)
@@ -653,7 +638,7 @@ class RGBEntryFrame(tk.Frame):
         # Create keypad
         self.create_keypad()
 
-        # Two-way binding: whenever the StringVars change, update the scales & "Current" color
+        # Two-way binding: update scales, current button, and send SPI command on changes
         self.red_value.trace_add("write", self.on_red_entry_changed)
         self.green_value.trace_add("write", self.on_green_entry_changed)
         self.blue_value.trace_add("write", self.on_blue_entry_changed)
@@ -663,8 +648,6 @@ class RGBEntryFrame(tk.Frame):
             if isinstance(child, (tk.Button, tk.Entry)):
                 child.bind("<Button-1>", self.reset_timeout)
                 child.bind("<Key>", self.reset_timeout)
-
-        # Also bind interactions on children of frames
         for child in preset_frame.winfo_children():
             child.bind("<Button-1>", self.reset_timeout)
         for child in input_frame.winfo_children():
@@ -674,25 +657,27 @@ class RGBEntryFrame(tk.Frame):
 
         self.reset_timeout()
 
+    # --- New method: Immediately send current RGB via SPI with a small delay ---
+    def update_led_color(self):
+        if self.spi_handler:
+            r = self.validate_rgb(self.red_value.get())
+            g = self.validate_rgb(self.green_value.get())
+            b = self.validate_rgb(self.blue_value.get())
+            self.spi_handler.set_led_color(self.locker_id, r, g, b)
+            time.sleep(0.05)
+
     # -----------------------------------------------------------------------
     #   Focus In/Out for each Entry
     # -----------------------------------------------------------------------
     def on_entry_focus_in(self, event):
-        """Clear only the entry that got focused."""
         event.widget.delete(0, tk.END)
 
     def on_entry_focus_out(self, event):
-        """
-        If the entry is empty after losing focus, set it to '0'.
-        Also clamp to [0..255] if out of range.
-        """
         text_value = event.widget.get().strip()
         if not text_value:
-            # If empty, set to 0
             event.widget.delete(0, tk.END)
             event.widget.insert(0, "0")
         else:
-            # Attempt clamping
             ivalue = self.validate_rgb(text_value)
             event.widget.delete(0, tk.END)
             event.widget.insert(0, str(ivalue))
@@ -701,17 +686,12 @@ class RGBEntryFrame(tk.Frame):
     #   Keypad creation
     # -----------------------------------------------------------------------
     def create_keypad(self):
-        """
-        Create a numeric keypad with numbers, Clear, and Save buttons.
-        The layout matches the PinEntryFrame's keypad for consistency.
-        """
         buttons = [
             ('1', 2, 0), ('2', 2, 1), ('3', 2, 2),
             ('4', 3, 0), ('5', 3, 1), ('6', 3, 2),
             ('7', 4, 0), ('8', 4, 1), ('9', 4, 2),
             ('Clear', 5, 0), ('0', 5, 1), ('Save', 5, 2)
         ]
-
         for (text, row, col) in buttons:
             if text == "Clear":
                 command = self.clear_inputs
@@ -719,7 +699,6 @@ class RGBEntryFrame(tk.Frame):
                 command = self.save_rgb
             else:
                 command = lambda t=text: self.on_number(t)
-
             button = tk.Button(
                 self, text=text, font=("Arial", 27),
                 command=command, bd=2, relief="raised",
@@ -744,28 +723,27 @@ class RGBEntryFrame(tk.Frame):
         self.blue_value.set(str(int(float(val))))
 
     # -----------------------------------------------------------------------
-    #   Entry trace callbacks -> update corresponding Scale
+    #   Entry trace callbacks -> update corresponding Scale, current button, and SPI
     # -----------------------------------------------------------------------
     def on_red_entry_changed(self, *args):
         val = self.validate_rgb(self.red_value.get())
         self.red_scale.set(val)
         self.update_current_color_button()
+        self.update_led_color()
 
     def on_green_entry_changed(self, *args):
         val = self.validate_rgb(self.green_value.get())
         self.green_scale.set(val)
         self.update_current_color_button()
+        self.update_led_color()
 
     def on_blue_entry_changed(self, *args):
         val = self.validate_rgb(self.blue_value.get())
         self.blue_scale.set(val)
         self.update_current_color_button()
+        self.update_led_color()
 
     def validate_rgb(self, value):
-        """
-        Convert a string to an int clamped to [0..255].
-        If invalid, returns 0.
-        """
         try:
             ivalue = int(value)
         except ValueError:
@@ -777,29 +755,14 @@ class RGBEntryFrame(tk.Frame):
         return ivalue
 
     def update_current_color_button(self):
-        """Update the first default color button to reflect current R, G, B (gamma corrected)."""
         r = self.validate_rgb(self.red_value.get())
         g = self.validate_rgb(self.green_value.get())
         b = self.validate_rgb(self.blue_value.get())
 
-        # If all three are zero, force (1,1,1) so it’s never fully black
-        if r == 0 and g == 0 and b == 0:
-            r, g, b = 1, 1, 1
-            self.red_value.set("1")
-            self.green_value.set("1")
-            self.blue_value.set("1")
-
-        # Convert to gamma-corrected hex
         hexcolor = rgb_to_hex(r, g, b)
-        # The first color button is self.color_buttons[0]
         self.color_buttons[0].config(bg=hexcolor, activebackground=hexcolor)
 
     def set_color_from_button(self, rgb_tuple):
-        """
-        Called when a default color button is pressed.
-        If the button is 'Current' (rgb_tuple=None), do nothing.
-        Otherwise set the entries & scales to that color.
-        """
         if rgb_tuple is None:
             return
         r, g, b = rgb_tuple
@@ -811,39 +774,32 @@ class RGBEntryFrame(tk.Frame):
     #   Keypad number + Clear + Save
     # -----------------------------------------------------------------------
     def on_number(self, number):
-        """Handle number button presses."""
         self.reset_timeout()
         focused = self.focus_get()
         if focused in (self.red_entry, self.green_entry, self.blue_entry):
             current = focused.get()
-            # If field is empty or if typed length < 3, append digit
             if len(current) < 3 and number.isdigit():
                 focused.insert(tk.END, number)
 
     def clear_inputs(self):
-        """Clear all RGB input fields (set to 0)."""
         self.reset_timeout()
         self.red_value.set("0")
         self.green_value.set("0")
         self.blue_value.set("0")
 
     def save_rgb(self):
-        """Save the entered RGB values."""
         self.reset_timeout()
         try:
             red = self.validate_rgb(self.red_value.get())
             green = self.validate_rgb(self.green_value.get())
             blue = self.validate_rgb(self.blue_value.get())
+            # --- Modified: Use a fallback if lockers.json is missing ---
+            try:
+                with open("lockers.json", "r") as file:
+                    lockers = json.load(file)
+            except FileNotFoundError:
+                lockers = {str(i): {"locker_id": i, "price": 5.0, "red":125, "green":125, "blue":125, "status": True} for i in range(1, 13)}
 
-            # If all zero, clamp to (1,1,1)
-            if red == 0 and green == 0 and blue == 0:
-                red, green, blue = 1, 1, 1
-
-            # Load existing lockers.json file
-            with open("lockers.json", "r") as file:
-                lockers = json.load(file)
-
-            # Update lockers with the new RGB values
             if self.locker_id == 255:  # Update all lockers
                 for locker in lockers.values():
                     locker["red"] = red
@@ -862,7 +818,6 @@ class RGBEntryFrame(tk.Frame):
                 else:
                     raise KeyError(f"Locker ID {self.locker_id} not found.")
 
-            # Save the updated lockers.json file
             with open("lockers.json", "w") as file:
                 json.dump(lockers, file, indent=4)
 
@@ -880,43 +835,36 @@ class RGBEntryFrame(tk.Frame):
     #   Show / Hide
     # -----------------------------------------------------------------------
     def on_close(self):
-        """Handle closing the frame via the 'X' button."""
         self.hide()
 
     def show(self, locker_id):
-        """
-        Display the RGBEntryFrame for a specific locker or all lockers.
-        Initialize to 125,125,125 each time we show the frame.
-        """
         self.locker_id = locker_id
-        # When showing, set default 125,125,125
-        self.red_value.set("125")
-        self.green_value.set("125")
-        self.blue_value.set("125")
-
+        # --- Modified: Read current RGB values from lockers.json ---
+        try:
+            with open("lockers.json", "r") as file:
+                lockers = json.load(file)
+        except FileNotFoundError:
+            lockers = {}
         if locker_id == 255:
+            locker = lockers.get("1", {"red":125, "green":125, "blue":125})
             title = "RGB for All Lockers"
         else:
+            locker = lockers.get(str(locker_id), {"red":125, "green":125, "blue":125})
             title = f"RGB for Locker {locker_id}"
-        # Update the title label
+        self.red_value.set(str(locker.get("red", 125)))
+        self.green_value.set(str(locker.get("green", 125)))
+        self.blue_value.set(str(locker.get("blue", 125)))
         self.title_label.config(text=title)
-
         self.place(relx=0.5, rely=0.5, anchor="center")
         self.lift()
         self.focus_set()
         self.reset_timeout()
 
     def show_all(self):
-        """Display the RGBEntryFrame for all lockers."""
         self.show(255)
 
     def hide(self):
-        """Hide the RGBEntryFrame."""
         self.place_forget()
-        # Optional: if you want to fully reset fields after hiding, uncomment:
-        # self.red_value.set("")
-        # self.green_value.set("")
-        # self.blue_value.set("")
         if self.last_interaction:
             self.after_cancel(self.last_interaction)
             self.last_interaction = None
@@ -925,15 +873,12 @@ class RGBEntryFrame(tk.Frame):
     #   Timeout handling
     # -----------------------------------------------------------------------
     def reset_timeout(self, event=None):
-        """Reset the timeout timer upon user interaction."""
         if self.last_interaction:
             self.after_cancel(self.last_interaction)
         self.last_interaction = self.after(self.timeout, self.on_timeout)
 
     def on_timeout(self):
-        """Handle frame closure on timeout."""
         self.hide()
-
 
 
 class PaymentPopupFrame(tk.Frame):
@@ -1315,25 +1260,29 @@ class LightingModeFrame(tk.Frame):
     def __init__(self, master, spi_handler, timeout=60000):
         """
         Initialize the LightingModeFrame.
-
-        :param master: Parent widget.
-        :param timeout: Timeout duration in milliseconds.
         """
         super().__init__(master, bg="#F0F0F0")
         self.master = master
         self.timeout = timeout
         self.spi_handler = spi_handler
         self.last_interaction = None
+        # New variables for mode tracking:
+        self.previous_mode = None
+        self.chosen_mode = None
 
-        # Configure grid layout
-        self.grid_rowconfigure(0, weight=0)  # For the "X" button
-        self.grid_rowconfigure(1, weight=1)  # For the label
+        # Increase the overall size of the frame
+        self.config(width=800, height=600)
+
+        # Configure grid layout: reserve rows for title, mode buttons, and bottom buttons.
+        self.grid_rowconfigure(0, weight=0)  # "X" button row
+        self.grid_rowconfigure(1, weight=0)  # Title row
         for i in range(2, 7):
-            self.grid_rowconfigure(i, weight=1)
+            self.grid_rowconfigure(i, weight=1)  # Mode button rows
+        self.grid_rowconfigure(7, weight=0)  # Bottom row for Cancel/Save
         for i in range(2):
             self.grid_columnconfigure(i, weight=1)
 
-        # Create "X" button to close the frame
+        # "X" button to close the frame (acts like Cancel)
         self.close_button = tk.Button(
             self, text="X", command=self.on_close, font=("Arial", 27, "bold"), bd=0,
             bg="#F0F0F0", activebackground="#F0F0F0"
@@ -1347,24 +1296,37 @@ class LightingModeFrame(tk.Frame):
         )
         self.label.grid(row=1, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
-        # Mode Buttons
+        # Mode Buttons – each sets the mode immediately and stores it in self.chosen_mode.
         mode_buttons = [
             ("Mode1 - V-day", self.on_mode1),
             ("Mode2 - Disco", self.on_mode2),
             ("Mode3 - Psychedelic", self.on_mode3),
             ("Mode4 - Welcom", self.on_mode4),
-            ("Mode5 - Solid Dicsco", self.on_mode5),
+            ("Mode5 - Solid Disco", self.on_mode5),
         ]
-
         for idx, (text, command) in enumerate(mode_buttons, start=2):
             button = tk.Button(
                 self, text=text, font=("Arial", 27), command=command
             )
-            # Same reduced thickness as AdminOptionsFrame
             button.config(width=40, height=2)
             button.grid(row=idx, column=0, columnspan=2, padx=30, pady=10, sticky="nsew")
 
-        # Bind interactions to reset the timeout
+        # Bottom buttons: Cancel (left) and Save (right)
+        self.cancel_button = tk.Button(
+            self, text="Cancel", font=("Arial", 27), command=self.on_cancel,
+            bg="#D9D9D9", activebackground="#BEBEBE"
+        )
+        self.cancel_button.config(width=20, height=2)
+        self.cancel_button.grid(row=7, column=0, padx=30, pady=20, sticky="nsew")
+
+        self.save_button = tk.Button(
+            self, text="Save", font=("Arial", 27), command=self.on_save,
+            bg="#D9D9D9", activebackground="#BEBEBE"
+        )
+        self.save_button.config(width=20, height=2)
+        self.save_button.grid(row=7, column=1, padx=30, pady=20, sticky="nsew")
+
+        # Bind interactions to reset timeout
         for child in self.winfo_children():
             if isinstance(child, tk.Button):
                 child.bind("<Button-1>", self.reset_timeout)
@@ -1373,48 +1335,93 @@ class LightingModeFrame(tk.Frame):
 
     def on_mode1(self):
         """Handle selecting Mode1."""
+        self.chosen_mode = 1
         self.spi_handler.set_led_color(255, 0, 0, 0, 1)
         self.reset_timeout()
         print("Mode1 selected.")
-        self.hide()
 
     def on_mode2(self):
         """Handle selecting Mode2."""
+        self.chosen_mode = 2
         self.spi_handler.set_led_color(255, 0, 0, 0, 2)
         self.reset_timeout()
         print("Mode2 selected.")
-        self.hide()
 
     def on_mode3(self):
         """Handle selecting Mode3."""
+        self.chosen_mode = 3
         self.spi_handler.set_led_color(255, 0, 0, 0, 3)
         self.reset_timeout()
         print("Mode3 selected.")
-        self.hide()
 
     def on_mode4(self):
         """Handle selecting Mode4."""
+        self.chosen_mode = 4
         self.spi_handler.set_led_color(255, 0, 0, 0, 4)
         self.reset_timeout()
         print("Mode4 selected.")
-        self.hide()
 
     def on_mode5(self):
         """Handle selecting Mode5."""
+        self.chosen_mode = 5
         self.spi_handler.set_led_color(255, 0, 0, 0, 5)
         self.reset_timeout()
         print("Mode5 selected.")
+
+    def on_cancel(self):
+        """
+        Cancel the change:
+         - Check lockers.json for the original LED color values
+         - Reapply those values to all lockers
+         - Close the frame.
+        """
+        try:
+            with open("lockers.json", "r") as file:
+                lockers = json.load(file)
+        except Exception as e:
+            print(f"Error reading lockers.json: {e}")
+            self.hide()
+            return
+
+        # For each locker, reapply the stored RGB values with full mode (0xFF)
+        for locker_id, locker in lockers.items():
+            red = locker.get("red", 125)
+            green = locker.get("green", 125)
+            blue = locker.get("blue", 125)
+            try:
+                locker_number = int(locker_id)
+            except ValueError:
+                continue
+            self.spi_handler.set_led_color(locker_number, red, green, blue, 0xFF)
+            time.sleep(0.05)
+        print("Reverted to original colors for all lockers from lockers.json.")
+        self.hide()
+
+    def on_save(self):
+        """
+        Save the change:
+         - Keep the chosen mode (already set immediately when a mode button was pressed)
+         - Close the frame.
+        """
+        print(f"Mode {self.chosen_mode} saved.")
         self.hide()
 
     def on_close(self):
-        """Close the LightingModeFrame."""
-        self.hide()
+        """Close the frame (acts like Cancel)."""
+        self.on_cancel()
 
-    def show(self, locker_id):
+    def show(self, locker_id, current_mode=None):
         """
         Display the LightingModeFrame in the center of the screen.
+        
+        :param locker_id: Not used for lighting mode but kept for consistency.
+        :param current_mode: The current lighting mode; if not provided, default to 1.
         """
+        if current_mode is None:
+            current_mode = 1  # Default mode if none is provided
         self.locker_id = locker_id
+        self.previous_mode = current_mode
+        self.chosen_mode = current_mode  # Default to current mode if no change is made.
         self.place(relx=0.5, rely=0.5, anchor="center")
         self.lift()
         self.focus_set()
@@ -1434,8 +1441,8 @@ class LightingModeFrame(tk.Frame):
         self.last_interaction = self.after(self.timeout, self.on_timeout)
 
     def on_timeout(self):
-        """Handle frame closure on timeout."""
-        self.hide()
+        """On timeout, revert changes and close the frame."""
+        self.on_cancel()
 
 
 class VentilationFrame(tk.Frame):
