@@ -664,7 +664,7 @@ class RGBEntryFrame(tk.Frame):
             g = self.validate_rgb(self.green_value.get())
             b = self.validate_rgb(self.blue_value.get())
             self.spi_handler.set_led_color(self.locker_id, r, g, b)
-            time.sleep(0.05)
+            time.sleep(0.0001)
 
     # -----------------------------------------------------------------------
     #   Focus In/Out for each Entry
@@ -794,6 +794,7 @@ class RGBEntryFrame(tk.Frame):
             green = self.validate_rgb(self.green_value.get())
             blue = self.validate_rgb(self.blue_value.get())
             # --- Modified: Use a fallback if lockers.json is missing ---
+            time.sleep(0.0005)
             try:
                 with open("lockers.json", "r") as file:
                     lockers = json.load(file)
@@ -818,8 +819,10 @@ class RGBEntryFrame(tk.Frame):
                 else:
                     raise KeyError(f"Locker ID {self.locker_id} not found.")
 
+            time.sleep(0.0005)
             with open("lockers.json", "w") as file:
                 json.dump(lockers, file, indent=4)
+            time.sleep(0.0005)
 
             print("Success: RGB values saved successfully.")
             self.hide()
@@ -1447,12 +1450,12 @@ class LightingModeFrame(tk.Frame):
 
 class VentilationFrame(tk.Frame):
     """
-    A large frame (similar in size to PinEntryFrame) that manages 
-    4 toggle switches: Fan1, Fan2, Fan3, and Auto.
+    A large frame that manages 7 toggle switches: Fan1, Fan2, Fan3,
+    Heat1, Heat2, Heat3, and Auto.
 
     - Reads logs/fan.txt (creating if missing) in show().
     - Applies that mode to toggles.
-    - When any toggle is pressed, we immediately compute the new mode,
+    - Whenever a toggle is pressed, we immediately compute the new mode,
       send it via SPI, and update logs/fan.txt.
     - Pressing "Save" also does the same, then hides the frame.
     """
@@ -1490,16 +1493,19 @@ class VentilationFrame(tk.Frame):
         # ---- Title label ----
         self.title_label = tk.Label(
             self,
-            text="Ventilation Control",
+            text="Ventilation & Heating Control",
             font=("Arial", 36, "bold"),
             bg="#F0F0F0"
         )
         self.title_label.grid(row=1, column=0, columnspan=2, pady=10)
 
-        # We track the on/off states for Fan1, Fan2, Fan3, Auto
+        # We track the on/off states for fans and heats, plus Auto
         self.fan1_on = False
         self.fan2_on = False
         self.fan3_on = False
+        self.heat1_on = False
+        self.heat2_on = False
+        self.heat3_on = False
         self.auto_on = False
 
         # Container for the big toggle rows
@@ -1507,17 +1513,20 @@ class VentilationFrame(tk.Frame):
         toggles_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=30, pady=30)
 
         # Let each row/column expand
-        for r in range(4):
+        # We'll have 7 rows (3 fans, 3 heats, 1 auto)
+        for r in range(7):
             toggles_frame.grid_rowconfigure(r, weight=1)
         for c in range(2):
             toggles_frame.grid_columnconfigure(c, weight=1)
 
         # Create the toggle rows
-        # We pass an internal callback to handle toggling logic.
         self.fan1_switch = self.create_toggle_row(toggles_frame, 0, "Fan 1", self.toggle_fan1)
         self.fan2_switch = self.create_toggle_row(toggles_frame, 1, "Fan 2", self.toggle_fan2)
         self.fan3_switch = self.create_toggle_row(toggles_frame, 2, "Fan 3", self.toggle_fan3)
-        self.auto_switch = self.create_toggle_row(toggles_frame, 3, "Auto", self.toggle_auto)
+        self.heat1_switch = self.create_toggle_row(toggles_frame, 3, "Heat 1", self.toggle_heat1)
+        self.heat2_switch = self.create_toggle_row(toggles_frame, 4, "Heat 2", self.toggle_heat2)
+        self.heat3_switch = self.create_toggle_row(toggles_frame, 5, "Heat 3", self.toggle_heat3)
+        self.auto_switch = self.create_toggle_row(toggles_frame, 6, "Auto", self.toggle_auto)
 
         # ---- Save button ----
         self.save_button = tk.Button(
@@ -1544,6 +1553,7 @@ class VentilationFrame(tk.Frame):
         lbl.grid(row=row_index, column=0, sticky="e", padx=10)
 
         # The "switch" is just a Button we color differently for ON/OFF
+        # Also ensure activeforeground is white so text doesn't turn black on click
         btn = tk.Button(
             parent,
             text="OFF",
@@ -1552,6 +1562,7 @@ class VentilationFrame(tk.Frame):
             bg="red",
             fg="white",
             activebackground="red",
+            activeforeground="white",
             command=toggle_func
         )
         btn.grid(row=row_index, column=1, sticky="w", padx=10)
@@ -1561,16 +1572,13 @@ class VentilationFrame(tk.Frame):
     # ------------------- Toggling Logic + Immediate SPI Send -------------------
 
     def toggle_fan1(self):
-        # If Auto is ON, turning fan on => auto must go off.
+        # If Auto is ON, turning anything on => auto must go off.
         if self.auto_on:
             self.auto_on = False
             self.update_switch(self.auto_switch, self.auto_on)
 
-        # Flip fan1
         self.fan1_on = not self.fan1_on
         self.update_switch(self.fan1_switch, self.fan1_on)
-
-        # Immediately update & send to SPI
         self._update_and_send()
 
     def toggle_fan2(self):
@@ -1580,7 +1588,6 @@ class VentilationFrame(tk.Frame):
 
         self.fan2_on = not self.fan2_on
         self.update_switch(self.fan2_switch, self.fan2_on)
-
         self._update_and_send()
 
     def toggle_fan3(self):
@@ -1590,12 +1597,38 @@ class VentilationFrame(tk.Frame):
 
         self.fan3_on = not self.fan3_on
         self.update_switch(self.fan3_switch, self.fan3_on)
+        self._update_and_send()
 
+    def toggle_heat1(self):
+        if self.auto_on:
+            self.auto_on = False
+            self.update_switch(self.auto_switch, self.auto_on)
+
+        self.heat1_on = not self.heat1_on
+        self.update_switch(self.heat1_switch, self.heat1_on)
+        self._update_and_send()
+
+    def toggle_heat2(self):
+        if self.auto_on:
+            self.auto_on = False
+            self.update_switch(self.auto_switch, self.auto_on)
+
+        self.heat2_on = not self.heat2_on
+        self.update_switch(self.heat2_switch, self.heat2_on)
+        self._update_and_send()
+
+    def toggle_heat3(self):
+        if self.auto_on:
+            self.auto_on = False
+            self.update_switch(self.auto_switch, self.auto_on)
+
+        self.heat3_on = not self.heat3_on
+        self.update_switch(self.heat3_switch, self.heat3_on)
         self._update_and_send()
 
     def toggle_auto(self):
         # If user toggles auto, set auto_on = not auto_on
-        # If auto_on goes True => fans must turn off
+        # If auto_on goes True => fans and heats must turn off
         self.auto_on = not self.auto_on
         self.update_switch(self.auto_switch, self.auto_on)
 
@@ -1603,28 +1636,35 @@ class VentilationFrame(tk.Frame):
             self.fan1_on = False
             self.fan2_on = False
             self.fan3_on = False
+            self.heat1_on = False
+            self.heat2_on = False
+            self.heat3_on = False
             self.update_switch(self.fan1_switch, self.fan1_on)
             self.update_switch(self.fan2_switch, self.fan2_on)
             self.update_switch(self.fan3_switch, self.fan3_on)
+            self.update_switch(self.heat1_switch, self.heat1_on)
+            self.update_switch(self.heat2_switch, self.heat2_on)
+            self.update_switch(self.heat3_switch, self.heat3_on)
 
         self._update_and_send()
 
     def update_switch(self, switch_btn, is_on):
         """Update the text/color of the switch button for ON/OFF states."""
         if is_on:
-            switch_btn.config(text="ON", bg="green", activebackground="green")
+            switch_btn.config(text="ON", bg="green", activebackground="green", 
+                              fg="white", activeforeground="white")
         else:
-            switch_btn.config(text="OFF", bg="red", activebackground="red")
+            switch_btn.config(text="OFF", bg="red", activebackground="red",
+                              fg="white", activeforeground="white")
 
     # ------------------- on_save + Immediate Updates -------------------
 
     def on_save(self):
         """
-        This still does the same logic:
-          1) compute mode from toggles
-          2) send via SPI
-          3) write logs/fan.txt
-          4) hide()
+        1) compute mode from toggles
+        2) send via SPI
+        3) write logs/fan.txt
+        4) hide()
         """
         mode = self._compute_mode_from_toggles()
         print(f"[VentilationFrame] mode = {mode}")
@@ -1649,28 +1689,35 @@ class VentilationFrame(tk.Frame):
         self._write_fan_file(mode)
 
     def _compute_mode_from_toggles(self):
-        """Compute (0..7, 255) based on fan1_on, fan2_on, fan3_on, auto_on."""
+        """
+        Compute a single integer or 255 if auto is on.
+        Bits in the integer (0..63) map to:
+            bit 0 => fan1_on
+            bit 1 => fan2_on
+            bit 2 => fan3_on
+            bit 3 => heat1_on
+            bit 4 => heat2_on
+            bit 5 => heat3_on
+        Auto => 255
+        """
         if self.auto_on:
             return 255
-        f1, f2, f3 = self.fan1_on, self.fan2_on, self.fan3_on
-        if not (f1 or f2 or f3):
-            return 0
-        elif f1 and not f2 and not f3:
-            return 1
-        elif f2 and not f1 and not f3:
-            return 2
-        elif f3 and not f1 and not f2:
-            return 3
-        elif f1 and f2 and not f3:
-            return 4
-        elif f1 and f3 and not f2:
-            return 5
-        elif f2 and f3 and not f1:
-            return 6
-        elif f1 and f2 and f3:
-            return 7
-        else:
-            return 0  # fallback
+
+        mode = 0
+        if self.fan1_on:
+            mode |= 1   # bit 0
+        if self.fan2_on:
+            mode |= 2   # bit 1
+        if self.fan3_on:
+            mode |= 4   # bit 2
+        if self.heat1_on:
+            mode |= 8   # bit 3
+        if self.heat2_on:
+            mode |= 16  # bit 4
+        if self.heat3_on:
+            mode |= 32  # bit 5
+
+        return mode
 
     # ------------------- Show / Hide / Timeout -------------------
 
@@ -1705,11 +1752,12 @@ class VentilationFrame(tk.Frame):
 
     def _read_fan_file(self):
         """
-        Reads a single integer from logs/fan.txt. If the file doesn't exist,
-        creates it with '0' and returns 0.
+        Reads a single integer from logs/fan.txt. 
+        If the file doesn't exist, create it with '0' and return 0.
         """
         path = "logs/fan.txt"
         if not os.path.exists(path):
+            os.makedirs("logs", exist_ok=True)
             with open(path, "w") as f:
                 f.write("0\n")
             return 0
@@ -1722,65 +1770,42 @@ class VentilationFrame(tk.Frame):
 
     def _write_fan_file(self, mode):
         """
-        Writes the given mode (0..7 or 255) to logs/fan.txt.
+        Writes the given mode (0..63 or 255) to logs/fan.txt.
         """
         path = "logs/fan.txt"
+        os.makedirs("logs", exist_ok=True)
         with open(path, "w") as f:
             f.write(f"{mode}\n")
 
     def _apply_mode_to_toggles(self, mode):
         """
-        Given a mode integer (0..7 or 255),
-        set (fan1_on, fan2_on, fan3_on, auto_on) accordingly,
+        Given a mode integer (0..63 or 255),
+        set (fan1_on, fan2_on, fan3_on, heat1_on, heat2_on, heat3_on, auto_on),
         and update the switch buttons.
         """
         if mode == 255:
+            # Auto
             self.auto_on = True
             self.fan1_on = False
             self.fan2_on = False
             self.fan3_on = False
+            self.heat1_on = False
+            self.heat2_on = False
+            self.heat3_on = False
         else:
             self.auto_on = False
-            if mode == 0:
-                self.fan1_on = False
-                self.fan2_on = False
-                self.fan3_on = False
-            elif mode == 1:
-                self.fan1_on = True
-                self.fan2_on = False
-                self.fan3_on = False
-            elif mode == 2:
-                self.fan1_on = False
-                self.fan2_on = True
-                self.fan3_on = False
-            elif mode == 3:
-                self.fan1_on = False
-                self.fan2_on = False
-                self.fan3_on = True
-            elif mode == 4:
-                self.fan1_on = True
-                self.fan2_on = True
-                self.fan3_on = False
-            elif mode == 5:
-                self.fan1_on = True
-                self.fan2_on = False
-                self.fan3_on = True
-            elif mode == 6:
-                self.fan1_on = False
-                self.fan2_on = True
-                self.fan3_on = True
-            elif mode == 7:
-                self.fan1_on = True
-                self.fan2_on = True
-                self.fan3_on = True
-            else:
-                # fallback => everything off
-                self.fan1_on = False
-                self.fan2_on = False
-                self.fan3_on = False
+            self.fan1_on = bool(mode & 1)     # bit 0
+            self.fan2_on = bool(mode & 2)     # bit 1
+            self.fan3_on = bool(mode & 4)     # bit 2
+            self.heat1_on = bool(mode & 8)    # bit 3
+            self.heat2_on = bool(mode & 16)   # bit 4
+            self.heat3_on = bool(mode & 32)   # bit 5
 
         # Update the actual toggle buttons
         self.update_switch(self.fan1_switch, self.fan1_on)
         self.update_switch(self.fan2_switch, self.fan2_on)
         self.update_switch(self.fan3_switch, self.fan3_on)
+        self.update_switch(self.heat1_switch, self.heat1_on)
+        self.update_switch(self.heat2_switch, self.heat2_on)
+        self.update_switch(self.heat3_switch, self.heat3_on)
         self.update_switch(self.auto_switch, self.auto_on)

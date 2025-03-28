@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 from utils import generate_locker_info, generate_sales_report, generate_csv_file
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.error import TimedOut, BadRequest
 from telegram.ext import (
     ApplicationBuilder,
@@ -609,6 +609,17 @@ class TelegramBotHandler:
             await self.app.initialize()
             await self.app.start()
             await self.app.updater.start_polling()
+
+
+            await self.app.bot.set_my_commands([
+                BotCommand("start", "Confirm the bot is online"),
+                BotCommand("info", "Display locker info/status"),
+                BotCommand("sales", "Generate sales reports"),
+                BotCommand("csv", "Generate sales CSV files"),
+                BotCommand("climate", "Show climate readings"),
+                BotCommand("climate_csv", "Generate climate CSV files"),
+                BotCommand("help", "Show help commands"),
+            ])            
 
             # Start reading from the queue in a background task
             queue_task = asyncio.create_task(self.read_queue_loop())
