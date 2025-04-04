@@ -463,12 +463,16 @@ class RGBEntryFrame(tk.Frame):
         self.timeout = timeout
         self.last_interaction = None
 
+        # Variables to handle throttled SPI updates
+        self._pending_color = (125, 125, 125)  # Starting color
+        self._last_sent_color = None
+        self._timer = None
+
         # Prevent frame from resizing based on its content
         self.pack_propagate(False)
-        # --- Modified: Set a larger fixed size for the frame ---
         self.config(width=600, height=400)
 
-        # Configure grid layout (closely matching original)
+        # Configure grid layout
         self.grid_rowconfigure(0, weight=0)  # Title + default color buttons + "X"
         self.grid_rowconfigure(1, weight=0)  # R, G, B row
         for i in range(2, 7):
@@ -476,14 +480,13 @@ class RGBEntryFrame(tk.Frame):
         for j in range(3):
             self.grid_columnconfigure(j, weight=1)  # 3 columns for keypad
 
-        # ---------- Top row (Title, Default Color Buttons, "X") ----------
+        # ------------------- Top Frame (Title, Preset Buttons, Close) -------------------
         top_frame = tk.Frame(self, bg="#F0F0F0")
         top_frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=20, pady=20)
         top_frame.grid_columnconfigure(0, weight=0)  # Title
         top_frame.grid_columnconfigure(1, weight=1)  # Preset color buttons
-        top_frame.grid_columnconfigure(2, weight=0)  # "X" button
+        top_frame.grid_columnconfigure(2, weight=0)  # "X" button 
 
-        # Title label in column 0
         self.title_label = tk.Label(
             top_frame,
             text="RGB for Locker",
@@ -492,11 +495,9 @@ class RGBEntryFrame(tk.Frame):
         )
         self.title_label.grid(row=0, column=0, sticky="w")
 
-        # Frame to hold default color buttons in column 1
         preset_frame = tk.Frame(top_frame, bg="#F0F0F0")
         preset_frame.grid(row=0, column=1, sticky="e")
 
-        # "X" button in column 2
         self.close_button = tk.Button(
             top_frame,
             text="X",
@@ -509,17 +510,16 @@ class RGBEntryFrame(tk.Frame):
         self.close_button.grid(row=0, column=2, sticky="e")
         self.close_button.config(width=4, height=2)
 
-        # ---------- Frame for R, G, B (Labels, Entries, Scales) ----------
+        # ------------------- Input Frame (R, G, B) -------------------
         input_frame = tk.Frame(self, bg="#F0F0F0")
         input_frame.grid(row=1, column=0, columnspan=3, pady=10, padx=40, sticky="nsew")
         input_frame.grid_columnconfigure(2, weight=1)
 
-        # StringVars to hold RGB values
         self.red_value = tk.StringVar()
         self.green_value = tk.StringVar()
         self.blue_value = tk.StringVar()
 
-        # --------------------- R label + entry + scale ---------------------
+        # R
         tk.Label(
             input_frame, text="R:", font=("Arial", 27), bg="#F0F0F0"
         ).grid(row=0, column=0, sticky="w")
@@ -535,7 +535,6 @@ class RGBEntryFrame(tk.Frame):
         self.red_entry.bind("<FocusIn>", self.on_entry_focus_in)
         self.red_entry.bind("<FocusOut>", self.on_entry_focus_out)
 
-        # --- Modified: Increase slider size (width and sliderlength) ---
         self.red_scale = tk.Scale(
             input_frame,
             from_=0, to=255,
@@ -549,7 +548,7 @@ class RGBEntryFrame(tk.Frame):
         self.red_scale.config(fg="red", highlightthickness=0)
         self.red_scale.grid(row=0, column=2, sticky="ew", padx=(0, 20))
 
-        # -------------------- G label + entry + scale ----------------------
+        # G
         tk.Label(
             input_frame, text="G:", font=("Arial", 27), bg="#F0F0F0"
         ).grid(row=1, column=0, sticky="w")
@@ -578,7 +577,7 @@ class RGBEntryFrame(tk.Frame):
         self.green_scale.config(fg="green", highlightthickness=0)
         self.green_scale.grid(row=1, column=2, sticky="ew", padx=(0, 20))
 
-        # -------------------- B label + entry + scale ----------------------
+        # B
         tk.Label(
             input_frame, text="B:", font=("Arial", 27), bg="#F0F0F0"
         ).grid(row=2, column=0, sticky="w")
@@ -607,7 +606,7 @@ class RGBEntryFrame(tk.Frame):
         self.blue_scale.config(fg="blue", highlightthickness=0)
         self.blue_scale.grid(row=2, column=2, sticky="ew", padx=(0, 20))
 
-        # ---------- Default color buttons (including the 'current' color) ----------
+        # Preset color buttons (including "Current")
         self.default_colors = [
             ("Current", None),
             ("Red", (255, 0, 0)),
@@ -635,10 +634,9 @@ class RGBEntryFrame(tk.Frame):
             btn.grid(row=0, column=idx, padx=10, sticky="e")
             self.color_buttons.append(btn)
 
-        # Create keypad
         self.create_keypad()
 
-        # Two-way binding: update scales, current button, and send SPI command on changes
+        # Link up the entry changes (trace)
         self.red_value.trace_add("write", self.on_red_entry_changed)
         self.green_value.trace_add("write", self.on_green_entry_changed)
         self.blue_value.trace_add("write", self.on_blue_entry_changed)
@@ -657,14 +655,26 @@ class RGBEntryFrame(tk.Frame):
 
         self.reset_timeout()
 
-    # --- New method: Immediately send current RGB via SPI with a small delay ---
-    def update_led_color(self):
-        if self.spi_handler:
-            r = self.validate_rgb(self.red_value.get())
-            g = self.validate_rgb(self.green_value.get())
-            b = self.validate_rgb(self.blue_value.get())
-            self.spi_handler.set_led_color(self.locker_id, r, g, b)
-            time.sleep(0.0001)
+        # Start periodic “send” timer (every 20ms)
+        self.periodic_send()
+
+    # -----------------------------------------------------------------------
+    #   Periodic SPI Send (every 20ms)
+    # -----------------------------------------------------------------------
+    def periodic_send(self):
+        """
+        Sends the pending color to SPI once every 20ms if it has changed
+        since the last send.
+        """
+        if self._pending_color != self._last_sent_color:
+            if self.spi_handler:
+                locker_id = self.locker_id
+                r, g, b = self._pending_color
+                self.spi_handler.set_led_color(locker_id, r, g, b)
+                self._last_sent_color = self._pending_color
+
+        # Schedule the next 20ms check
+        self._timer = self.after(50, self.periodic_send)
 
     # -----------------------------------------------------------------------
     #   Focus In/Out for each Entry
@@ -723,13 +733,13 @@ class RGBEntryFrame(tk.Frame):
         self.blue_value.set(str(int(float(val))))
 
     # -----------------------------------------------------------------------
-    #   Entry trace callbacks -> update corresponding Scale, current button, and SPI
+    #   Entry trace callbacks -> update corresponding Scale and “pending color”
     # -----------------------------------------------------------------------
     def on_red_entry_changed(self, *args):
         val = self.validate_rgb(self.red_value.get())
         self.red_scale.set(val)
         self.update_current_color_button()
-        self.update_led_color()
+        self.update_led_color()  # Just updates _pending_color now
 
     def on_green_entry_changed(self, *args):
         val = self.validate_rgb(self.green_value.get())
@@ -743,16 +753,21 @@ class RGBEntryFrame(tk.Frame):
         self.update_current_color_button()
         self.update_led_color()
 
+    # -----------------------------------------------------------------------
+    #   Store the latest color in self._pending_color (instead of sending immediately)
+    # -----------------------------------------------------------------------
+    def update_led_color(self):
+        r = self.validate_rgb(self.red_value.get())
+        g = self.validate_rgb(self.green_value.get())
+        b = self.validate_rgb(self.blue_value.get())
+        self._pending_color = (r, g, b)
+
     def validate_rgb(self, value):
         try:
             ivalue = int(value)
         except ValueError:
             return 0
-        if ivalue < 0:
-            return 0
-        if ivalue > 255:
-            return 255
-        return ivalue
+        return max(0, min(255, ivalue))
 
     def update_current_color_button(self):
         r = self.validate_rgb(self.red_value.get())
@@ -764,6 +779,7 @@ class RGBEntryFrame(tk.Frame):
 
     def set_color_from_button(self, rgb_tuple):
         if rgb_tuple is None:
+            # "Current" button—do nothing special
             return
         r, g, b = rgb_tuple
         self.red_value.set(str(r))
@@ -793,47 +809,45 @@ class RGBEntryFrame(tk.Frame):
             red = self.validate_rgb(self.red_value.get())
             green = self.validate_rgb(self.green_value.get())
             blue = self.validate_rgb(self.blue_value.get())
-            # --- Modified: Use a fallback if lockers.json is missing ---
-            time.sleep(0.0005)
-            try:
-                with open("lockers.json", "r") as file:
-                    lockers = json.load(file)
-            except FileNotFoundError:
-                lockers = {str(i): {"locker_id": i, "price": 5.0, "red":125, "green":125, "blue":125, "status": True} for i in range(1, 13)}
+        except Exception as e:
+            print(f"Error converting RGB inputs: {e}", file=sys.stderr)
+            return
 
-            if self.locker_id == 255:  # Update all lockers
-                for locker in lockers.values():
-                    locker["red"] = red
-                    locker["green"] = green
-                    locker["blue"] = blue
-                self.spi_handler.set_led_color(255, red, green, blue)
-                time.sleep(0.05)
-            else:  # Update a specific locker
-                locker = lockers.get(str(self.locker_id))
-                if locker:
-                    locker["red"] = red
-                    locker["green"] = green
-                    locker["blue"] = blue
-                    self.spi_handler.set_led_color(self.locker_id, red, green, blue)
-                    time.sleep(0.05)
-                else:
-                    raise KeyError(f"Locker ID {self.locker_id} not found.")
+        # Load existing locker data; if missing or corrupted, initialize defaults.
+        try:
+            with open("lockers.json", "r") as file:
+                lockers = json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError):
+            lockers = {str(i): {"locker_id": i, "price": 5.0,
+                                "red": 125, "green": 125, "blue": 125,
+                                "status": True}
+                    for i in range(1, 13)}
+        
+        # Update the RGB values.
+        if self.locker_id == 255:
+            # Update all lockers.
+            for locker in lockers.values():
+                locker["red"] = red
+                locker["green"] = green
+                locker["blue"] = blue
+        else:
+            locker_key = str(self.locker_id)
+            if locker_key in lockers:
+                lockers[locker_key]["red"] = red
+                lockers[locker_key]["green"] = green
+                lockers[locker_key]["blue"] = blue
+            else:
+                print(f"Error: Locker ID {self.locker_id} not found in lockers.json", file=sys.stderr)
+                return
 
-            time.sleep(0.0005)
+        # Save the updated data back to the JSON file.
+        try:
             with open("lockers.json", "w") as file:
                 json.dump(lockers, file, indent=4)
-            time.sleep(0.0005)
-
             print("Success: RGB values saved successfully.")
             self.hide()
-
-        except ValueError as e:
-            print(f"Invalid Input: {str(e)}", file=sys.stderr)
-        except KeyError as e:
-            print(f"Error: {str(e)}", file=sys.stderr)
         except Exception as e:
-            print(f"Error: An unexpected error occurred: {str(e)}", file=sys.stderr)
-
+            print(f"Error saving lockers.json: {e}", file=sys.stderr)
     # -----------------------------------------------------------------------
     #   Show / Hide
     # -----------------------------------------------------------------------
@@ -842,18 +856,19 @@ class RGBEntryFrame(tk.Frame):
 
     def show(self, locker_id):
         self.locker_id = locker_id
-        # --- Modified: Read current RGB values from lockers.json ---
         try:
             with open("lockers.json", "r") as file:
                 lockers = json.load(file)
         except FileNotFoundError:
             lockers = {}
+
         if locker_id == 255:
             locker = lockers.get("1", {"red":125, "green":125, "blue":125})
             title = "RGB for All Lockers"
         else:
             locker = lockers.get(str(locker_id), {"red":125, "green":125, "blue":125})
             title = f"RGB for Locker {locker_id}"
+
         self.red_value.set(str(locker.get("red", 125)))
         self.green_value.set(str(locker.get("green", 125)))
         self.blue_value.set(str(locker.get("blue", 125)))

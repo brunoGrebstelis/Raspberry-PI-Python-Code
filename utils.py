@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from collections import Counter
 import matplotlib.pyplot as plt
+import time
 
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -856,6 +857,21 @@ def interpret_and_notify(app, data, bot_queue):
 
         print(f"[interpret_and_notify] Logged climate data (sensor {sensor_number}): "
             f"{date_str} {time_str}, {temperature:.2f}°C, {humidity:.2f}%")
+        
+
+    elif command == 0xF5:
+        """
+        If command 0xF5 is received:
+          - We want to call three methods from app.py:
+                1) transfer_prices_to_stm32()
+                2) transfer_rgb_to_stm32()
+                3) transfer_fan_mode_from_file()
+        """
+        print("[interpret_and_notify] Received 0xF5 -> triggering re-sync to STM32")
+        time.sleep(0.05)
+        app.transfer_prices_to_stm32()
+        app.transfer_rgb_to_stm32()
+        app.transfer_fan_mode_from_file()
 
 
     else:

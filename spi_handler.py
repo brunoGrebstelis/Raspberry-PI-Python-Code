@@ -158,7 +158,7 @@ class SPIHandler:
                 # Second transaction to read
                 response = self.spi.xfer2([0x00] * 6)
                 print(f"SPIHandler: SPI Response: {response}")
-                interpret_and_notify(self.app, response, self.bot_queue)
+            interpret_and_notify(self.app, response, self.bot_queue)
         except Exception as e:
             print(f"SPIHandler: Error during SPI communication - {e}")
 
