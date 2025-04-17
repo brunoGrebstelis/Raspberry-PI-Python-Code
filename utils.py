@@ -841,7 +841,7 @@ def interpret_and_notify(app, data, bot_queue):
         try:
             cursor.execute("ALTER TABLE climate ADD COLUMN sensor INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
-            pass  # Means column already exists, ignore
+            pass  # Means column already exists, ignore 
 
         # Insert the climate data
         now = datetime.now()
