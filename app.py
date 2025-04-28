@@ -569,6 +569,7 @@ class VendingMachineApp(tk.Tk):
         """
         Transfer RGB color information from JSON to STM32 via SPI.
         """
+        time.sleep(0.05)
         if self.spi_enabled:
             for locker_id, data in self.locker_data.items():
                 red = data.get("red", 0)
