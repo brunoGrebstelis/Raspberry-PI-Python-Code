@@ -69,7 +69,7 @@ class VendingMachineApp(tk.Tk):
         self.price_entry_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.price_entry_frame.hide()
 
-        self.rgb_entry_frame = RGBEntryFrame(self, locker_id=None, spi_handler=None)  # Will set spi_handler later
+        self.rgb_entry_frame = RGBEntryFrame(self, locker_id=None, spi_handler=None, save_rgb_callback = self.save_rgb_callback)  # Will set spi_handler later
         self.rgb_entry_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.rgb_entry_frame.hide()
 
@@ -552,6 +552,31 @@ class VendingMachineApp(tk.Tk):
             print("SPI is disabled, skipping SPI commands.")
 
         #messagebox.showinfo("Price Updated", f"Price for Locker {locker_id} set to {new_price:.2f}€")
+
+
+    def save_rgb_callback(self, locker_id, r, g, b):
+        """
+        Persist RGB values for one locker (or all lockers if locker_id == 255).
+        """
+        if locker_id == 255:          # update every locker
+            for d in self.locker_data.values():
+                d.update(red=r, green=g, blue=b)
+        else:                         # update / create a single locker
+            key = str(locker_id)
+
+            if key not in self.locker_data:      # brand-new locker
+                self.locker_data[key] = {
+                    "locker_id": locker_id,
+                    "price": 5.0,
+                    "status": True,
+                    "red": r,
+                    "green": g,
+                    "blue": b
+                }
+            else:                                # existing locker
+                self.locker_data[key].update(red=r, green=g, blue=b)
+
+        save_locker_data(self.locker_data)       # utils.py helper
 
 
 

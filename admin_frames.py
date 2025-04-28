@@ -452,7 +452,7 @@ def rgb_to_hex(r, g, b, gamma=2.2):
     return f"#{r_g:02x}{g_g:02x}{b_g:02x}"
 
 class RGBEntryFrame(tk.Frame):
-    def __init__(self, master, locker_id, spi_handler, timeout=60000):
+    def __init__(self, master, locker_id, spi_handler, save_rgb_callback, timeout=60000):
         """
         Initialize the RGBEntryFrame.
         """
@@ -460,6 +460,7 @@ class RGBEntryFrame(tk.Frame):
         self.master = master
         self.locker_id = locker_id
         self.spi_handler = spi_handler
+        self.save_rgb_callback = save_rgb_callback
         self.timeout = timeout
         self.last_interaction = None
 
@@ -806,51 +807,24 @@ class RGBEntryFrame(tk.Frame):
     def save_rgb(self):
         self.reset_timeout()
         try:
-            red = self.validate_rgb(self.red_value.get())
+            red   = self.validate_rgb(self.red_value.get())
             green = self.validate_rgb(self.green_value.get())
-            blue = self.validate_rgb(self.blue_value.get())
+            blue  = self.validate_rgb(self.blue_value.get())
         except Exception as e:
             print(f"Error converting RGB inputs: {e}", file=sys.stderr)
             return
 
-        # Load existing locker data; if missing or corrupted, initialize defaults.
-        try:
-            with open("lockers.json", "r") as file:
-                lockers = json.load(file)
-        except (FileNotFoundError, json.JSONDecodeError):
-            lockers = {str(i): {"locker_id": i, "price": 5.0,
-                                "red": 125, "green": 125, "blue": 125,
-                                "status": True}
-                    for i in range(1, 13)}
-        
-        # Update the RGB values.
-        if self.locker_id == 255:
-            # Update all lockers.
-            for locker in lockers.values():
-                locker["red"] = red
-                locker["green"] = green
-                locker["blue"] = blue
-        else:
-            locker_key = str(self.locker_id)
-            if locker_key in lockers:
-                lockers[locker_key]["red"] = red
-                lockers[locker_key]["green"] = green
-                lockers[locker_key]["blue"] = blue
-            else:
-                print(f"Error: Locker ID {self.locker_id} not found in lockers.json", file=sys.stderr)
-                return
+        # NEW – hand the colour triplet back to the main app
+        self.save_rgb_callback(self.locker_id, red, green, blue)
 
-        # Save the updated data back to the JSON file.
-        try:
-            with open("lockers.json", "w") as file:
-                json.dump(lockers, file, indent=4)
-            print("Success: RGB values saved successfully.")
-            self.hide()
-        except Exception as e:
-            print(f"Error saving lockers.json: {e}", file=sys.stderr)
-    # -----------------------------------------------------------------------
-    #   Show / Hide
-    # -----------------------------------------------------------------------
+        # The SPI “periodic_send” loop is still running, so the LEDs
+        # keep receiving _pending_color exactly as before.
+        print("Success: RGB values queued for saving.")
+        self.hide()
+
+
+
+
     def on_close(self):
         self.hide()
 
