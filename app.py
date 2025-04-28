@@ -92,6 +92,20 @@ class VendingMachineApp(tk.Tk):
 
         self.lighting_mode_frame = LightingModeFrame(self, spi_handler=None, timeout=60000)
 
+
+
+        self.protocol("WM_DELETE_WINDOW", self.on_close)  # Ensure SPI is closed on exit
+
+        self.mdb_handler = MDBHandler(port="/dev/ttyACM0", debug=True)
+        try:
+            self.mdb_handler.init_serial()
+            self.mdb_handler.init_devices()
+        except Exception as e:
+            #messagebox.showerror("Error", f"MDB Initialization Failed: {e}")
+            self.mdb_handler = None
+
+
+
         # SPIHandler initialization with error handling
         try:
             self.spi_handler = SPIHandler(app=self, bot_queue = self.bot_queue, bus=0, device=0, speed_hz=500000)
@@ -111,15 +125,7 @@ class VendingMachineApp(tk.Tk):
             self.spi_enabled = False
             print(f"SPI not available on this system: {e}")
 
-        self.protocol("WM_DELETE_WINDOW", self.on_close)  # Ensure SPI is closed on exit
 
-        self.mdb_handler = MDBHandler(port="/dev/ttyACM0", debug=True)
-        try:
-            self.mdb_handler.init_serial()
-            self.mdb_handler.init_devices()
-        except Exception as e:
-            #messagebox.showerror("Error", f"MDB Initialization Failed: {e}")
-            self.mdb_handler = None
 
 
         self.ventilation_frame = VentilationFrame(
@@ -551,36 +557,37 @@ class VendingMachineApp(tk.Tk):
 
     def transfer_prices_to_stm32(self):
         """
-        Transfer price information from JSON to STM32 via SPI.
+        Transfer price information from JSON to STM32 via SPI, repeated twice for each locker.
         """
         if self.spi_enabled:
             for locker_id, data in self.locker_data.items():
                 price = data["price"]
                 locker_number = int(locker_id)
-                self.spi_handler.set_price(locker_number, price)
-                print(f"Price for Locker {locker_number} set to {price:.2f}€")
-                time.sleep(0.05)
+                for _ in range(2):  # Send the same data twice
+                    self.spi_handler.set_price(locker_number, price)
+                    print(f"Price for Locker {locker_number} set to {price:.2f}€")
+                    time.sleep(0.05)
         else:
             print("SPI is disabled, skipping price transfer.")
 
 
-
     def transfer_rgb_to_stm32(self):
         """
-        Transfer RGB color information from JSON to STM32 via SPI.
+        Transfer RGB color information from JSON to STM32 via SPI, repeated twice for each locker.
         """
-        time.sleep(0.05)
         if self.spi_enabled:
             for locker_id, data in self.locker_data.items():
                 red = data.get("red", 0)
                 green = data.get("green", 0)
                 blue = data.get("blue", 0)
                 locker_number = int(locker_id)
-                self.spi_handler.set_led_color(locker_number, red, green, blue, 0xFF)
-                print(f"LED color for Locker {locker_number} set to RGB({red}, {green}, {blue})")
-                time.sleep(0.05)
+                for _ in range(2):  # Send the same data twice
+                    self.spi_handler.set_led_color(locker_number, red, green, blue, 0xFF)
+                    print(f"LED color for Locker {locker_number} set to RGB({red}, {green}, {blue})")
+                    time.sleep(0.05)
         else:
             print("SPI is disabled, skipping RGB transfer.")
+
 
     def transfer_fan_mode_from_file(self):
         """Reads logs/fan.txt, if missing => create with '0', 
