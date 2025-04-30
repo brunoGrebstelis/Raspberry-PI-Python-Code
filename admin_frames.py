@@ -356,14 +356,14 @@ class InformationFrame(tk.Frame):
         text_german = (
             "Leider ist das Schließfach blockiert.\n"
             "   Für Rückerstattung oder Blumen kontaktieren Sie bitte:  \n"
-            "Janis: +4915757165517\n"
-            "Aija: +4915782920110"
+            "Aija: +4915782920110\n"
+            "Janis: +4915757165517"
         )
         text_english = (
             "Unfortunately, the locker is jammed.\n"
             "To get a refund or flowers, please contact:\n"
-            "Janis: +4915757165517\n"
-            "Aija: +4915782920110"
+            "Aija: +4915782920110\n"
+            "Janis: +4915757165517"
         )
 
         # Labels for the German text (larger size, bold font)
