@@ -872,6 +872,41 @@ def interpret_and_notify(app, data, bot_queue):
         app.transfer_prices_to_stm32()
         app.transfer_rgb_to_stm32()
         app.transfer_fan_mode_from_file()
+        
+
+    elif command == 0xF6:                                  # “black‑box” error frame
+        error_code = byte2          # selects the text template (1‥8)
+        value      = byte1          # substituted for %d in the template
+
+        # Map STM32 error codes ➜ human‑readable messages
+        error_map = {
+            1: "Failed to read data from sensor %d.",
+            2: "Mode in setFanMode() in climate.c: %d",
+            3: "Send_RGB (!= HAL_OK) device:  %d",
+            4: "Send_Price (!= HAL_OK) device:  %d",
+            5: "Response checksum error. locker: %d",
+            6: "Unexpected response when opening locker %d.",
+            7: "No response received when opening the cabinet  locker: %d",
+            8: "Failed to determine the status of locker %d. Aborting open operation."
+        }
+
+        # Resolve template → final message, fall back to generic text
+        message_txt = error_map.get(
+            error_code,
+            f"Unknown error code {error_code} (value {value})."
+        ) % value
+
+        # Assemble one plain‑text log line:   YYYY‑MM‑DD HH:MM:SS, 00 FF …,  message
+        timestamp  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        raw_hex    = " ".join(f"{b:02X}" for b in data)        # e.g. "F6 05 01 00 00 00"
+        log_line   = f"{timestamp}, {raw_hex}, {message_txt}\n"
+
+        # Ensure logs/ exists, then append
+        os.makedirs("logs", exist_ok=True)
+        with open("logs/BLACK_BOX_UART.txt", "a", encoding="utf-8") as f:
+            f.write(log_line)
+
+        print(f"[interpret_and_notify] BLACK_BOX_UART → {log_line.strip()}")
 
 
     else:
