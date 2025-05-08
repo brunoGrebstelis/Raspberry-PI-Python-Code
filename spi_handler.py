@@ -163,6 +163,12 @@ class SPIHandler:
                 time.sleep(0.1)
                 response = self.spi.xfer2([0x00] * 6)  # phase‑2 (read)
             print(f"SPIHandler: SPI response {response}")
+
+            if response and response[0] == 0xF2:
+                print("SPIHandler: Reset command (0xF2) detected – "
+                    "waiting 2s then resetting STM32.")
+                time.sleep(2)
+                self._reset_stm32()
             interpret_and_notify(self.app, response, self.bot_queue)
             # activity bookkeeping
             self.last_spi_time = time.time()

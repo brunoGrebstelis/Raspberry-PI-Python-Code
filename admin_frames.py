@@ -934,14 +934,14 @@ class PaymentPopupFrame(tk.Frame):
         if self.last_interaction:
             self.after_cancel(self.last_interaction)
             self.last_interaction = None
-        print("PaymentPopupFrame: Frame hidden.")  # Debugging
+        #print("PaymentPopupFrame: Frame hidden.")  # Debugging
 
     def reset_timeout(self, event=None):
         """Reset the timeout timer upon user interaction."""
         if self.last_interaction:
             self.after_cancel(self.last_interaction)
         self.last_interaction = self.after(self.timeout, self.on_timeout)
-        print("PaymentPopupFrame: Timeout reset.")  # Debugging
+        #print("PaymentPopupFrame: Timeout reset.")  # Debugging
 
     def on_timeout(self):
         """Handle frame closure on timeout."""
