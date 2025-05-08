@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from datetime import datetime
 from utils import generate_locker_info, generate_sales_report, generate_csv_file
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.error import TimedOut, BadRequest
@@ -15,8 +16,20 @@ from telegram.ext import (
 
 CHAT_IDS_FILE = "chats.json"
 
+def log_event(message: str):
+    """
+    Write each log event in 'logs/BLACK_BOX_Telegram.tx' with date and time, creating
+    the logs folder and file if they do not exist.
+    """
+    if not os.path.exists("logs"):
+        os.makedirs("logs")
+    with open("logs/BLACK_BOX_Telegram.tx", "a", encoding="utf-8") as f:
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        f.write(f"{now_str} {message}\n")
+
 def load_chat_ids():
     """Load saved chat IDs from JSON file, returning a list of ints."""
+    log_event("load_chat_ids called")
     if not os.path.exists(CHAT_IDS_FILE):
         return []
     with open(CHAT_IDS_FILE, "r") as f:
@@ -31,6 +44,7 @@ def load_chat_ids():
 
 def save_chat_ids(chat_ids):
     """Save a list of chat IDs to JSON file."""
+    log_event("save_chat_ids called")
     with open(CHAT_IDS_FILE, "w") as f:
         json.dump(chat_ids, f)
 
@@ -44,6 +58,7 @@ class TelegramBotHandler:
     """
 
     def __init__(self, token: str, bot_queue):
+        log_event("TelegramBotHandler __init__ called")
         self.token = token
         self.bot_queue = bot_queue
 
@@ -64,7 +79,6 @@ class TelegramBotHandler:
         self.app.add_handler(CallbackQueryHandler(self.handle_climate_csv_selection, pattern="^climate_csv_"))
         self.app.add_handler(CallbackQueryHandler(self.handle_sales_selection))
 
-
         # Single text handler to process manual entry or fallback
         self.app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text)
@@ -72,6 +86,7 @@ class TelegramBotHandler:
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Register a new chat ID and confirm the bot is online."""
+        log_event("start_command called")
         chat_id = update.effective_chat.id
         await self._retry(
             update.message.reply_text,
@@ -87,6 +102,7 @@ class TelegramBotHandler:
 
     async def info_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Example command that calls a function to generate info."""
+        log_event("info_command called")
         info_text = generate_locker_info()  # from utils.py, adjust as needed
         await self._retry(update.message.reply_text, info_text)
 
@@ -95,6 +111,7 @@ class TelegramBotHandler:
         Presents an inline keyboard with multiple time-period options:
         - This Year, This Month, Last Year, Last Month, Today, Yesterday, Total, Manual Entry
         """
+        log_event("sales_command called")
         keyboard = [
             [InlineKeyboardButton("📅 This Year", callback_data="this_year")],
             [InlineKeyboardButton("📆 This Month", callback_data="this_month")],
@@ -118,6 +135,7 @@ class TelegramBotHandler:
         Presents the same time-period options as /sales but will produce a CSV file
         instead of text/charts.
         """
+        log_event("csv_command called")
         keyboard = [
             [InlineKeyboardButton("📅 This Year", callback_data="csv_this_year")],
             [InlineKeyboardButton("📆 This Month", callback_data="csv_this_month")],
@@ -140,6 +158,7 @@ class TelegramBotHandler:
         """
         Presents the same time-period options as /csv, but for climate data instead of sales.
         """
+        log_event("climate_csv_command called")
         keyboard = [
             [InlineKeyboardButton("📅 This Year", callback_data="climate_csv_this_year")],
             [InlineKeyboardButton("📆 This Month", callback_data="climate_csv_this_month")],
@@ -158,40 +177,35 @@ class TelegramBotHandler:
             reply_markup=reply_markup,
         )
 
-
     async def climate_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         Responds with the latest climate reading and average (today, yesterday, last 30 days),
         or "ND" if no data is found for a particular period.
         Uses emojis for temperature (🌡) and humidity (💧).
         """
+        log_event("climate_command called")
         from utils import get_climate_stats
         stats = get_climate_stats()
 
-        # Helper to format a single temperature/humidity line
         def fmt_line(label, t, h):
-            # If t or h is None => "ND"
             if t is None or h is None:
                 return f"{label}: ND"
             return f"{label}: 🌡{t:.1f}°C | 💧{h:.1f}%"
 
-        # Build the lines
         lines = []
         lines.append(fmt_line("Current", stats["current_temp"], stats["current_hum"]))
         lines.append(fmt_line("Today", stats["avg_today_temp"], stats["avg_today_hum"]))
         lines.append(fmt_line("Yesterday", stats["avg_yesterday_temp"], stats["avg_yesterday_hum"]))
         lines.append(fmt_line("Last 30 days", stats["avg_30days_temp"], stats["avg_30days_hum"]))
-        
 
         msg_text = "\n".join(lines)
-
-        # Send it back
         await self._retry(update.message.reply_text, msg_text)
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         Sends a list of available commands with brief descriptions (with emojis).
         """
+        log_event("help_command called")
         print("[DEBUG] help_command triggered")
         help_text = (
             "🌐Bot Commands Help\n\n"
@@ -203,19 +217,15 @@ class TelegramBotHandler:
             "/climate_csv - 🌦️Generate climate CSV files\n"
             "/help - ❓Show this help message\n"
         )
-
         await self._retry(update.message.reply_text, help_text)
-
-
 
     async def handle_sales_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle inline keyboard callbacks for the sales periods."""
+        log_event("handle_sales_selection called")
         query = update.callback_query
-        await query.answer()  # Acknowledge the callback
+        await query.answer()
 
         data = query.data
-
-        # Direct, predefined time periods
         if data in [
             "this_year",
             "this_month",
@@ -225,33 +235,24 @@ class TelegramBotHandler:
             "yesterday",
             "total",
         ]:
-    
-            # Then broadcast the final message to all chat IDs
-            # (e.g. "This Year", "Last Year", etc.)
-            # We'll do a little label cleanup:
             label = data.replace("_", " ").title()
             await self.sales(label)
-
         elif data == "manual_entry":
-            # Switch to manual entry
             context.user_data["sales_step"] = "start_date"
-            # Edit the message to prompt for start date
             await self._retry(
                 query.edit_message_text,
                 "Please enter the start date (YYYY-MM-DD):"
             )
 
-
-
     async def handle_csv_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         Handle inline keyboard callbacks for CSV export.
         """
+        log_event("handle_csv_selection called")
         query = update.callback_query
         await query.answer()
         data = query.data
 
-        # Predefined quick picks
         if data in [
             "csv_this_year",
             "csv_this_month",
@@ -261,28 +262,24 @@ class TelegramBotHandler:
             "csv_yesterday",
             "csv_total",
         ]:
-            # Convert e.g. "csv_this_year" -> "this_year" -> "This Year"
             label = data.replace("csv_", "").replace("_", " ").title()
             await self.send_csv_report(label)
-
         elif data == "csv_manual_entry":
-            # Switch to manual entry steps
             context.user_data["csv_step"] = "start_date"
             await self._retry(
                 query.edit_message_text,
                 "Please enter the start date (YYYY-MM-DD) for CSV export:",
             )
 
-
     async def handle_climate_csv_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         Handle inline keyboard callbacks for climate CSV export.
         """
+        log_event("handle_climate_csv_selection called")
         query = update.callback_query
         await query.answer()
         data = query.data
 
-        # For direct picks
         if data in [
             "climate_csv_this_year",
             "climate_csv_this_month",
@@ -292,18 +289,14 @@ class TelegramBotHandler:
             "climate_csv_yesterday",
             "climate_csv_total",
         ]:
-            # e.g. "climate_csv_this_year" => "this_year" => "This Year"
             label = data.replace("climate_csv_", "").replace("_", " ").title()
             await self.send_climate_csv_report(label)
-
         elif data == "climate_csv_manual_entry":
             context.user_data["climate_csv_step"] = "start_date"
             await self._retry(
                 query.edit_message_text,
                 "Please enter the start date (YYYY-MM-DD) for climate CSV export:",
             )
-
-
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -313,8 +306,8 @@ class TelegramBotHandler:
         - Else if user_data indicates a /sales manual entry, handle it.
         - Otherwise, fallback and just echo.
         """
+        log_event("handle_text called")
 
-        # 1) Handle /climate_csv manual entry flow.
         if "climate_csv_step" in context.user_data:
             step = context.user_data["climate_csv_step"]
 
@@ -325,22 +318,17 @@ class TelegramBotHandler:
                     update.message.reply_text,
                     "Please enter the end date (YYYY-MM-DD) for climate CSV export:"
                 )
-                return  # Stop here
+                return
 
             elif step == "end_date":
                 context.user_data["climate_csv_end"] = update.message.text
                 start_date = context.user_data["climate_csv_start"]
-                end_date   = context.user_data["climate_csv_end"]
+                end_date = context.user_data["climate_csv_end"]
                 period_label = f"{start_date} to {end_date}"
-
-                # Generate/send the climate CSV for that range
                 await self.send_climate_csv_report(period_label)
-
-                # Clear state so we exit the climate CSV flow
                 context.user_data.clear()
                 return
 
-        # 2) Handle /csv manual entry flow (sales CSV).
         if "csv_step" in context.user_data:
             step = context.user_data["csv_step"]
 
@@ -351,22 +339,17 @@ class TelegramBotHandler:
                     update.message.reply_text,
                     "Please enter the end date (YYYY-MM-DD) for CSV export:"
                 )
-                return  # Stop here so we don't fall through to sales logic.
+                return
 
             elif step == "end_date":
                 context.user_data["csv_end_date"] = update.message.text
                 start_date = context.user_data["csv_start_date"]
-                end_date   = context.user_data["csv_end_date"]
+                end_date = context.user_data["csv_end_date"]
                 period_label = f"{start_date} to {end_date}"
-
-                # Generate/send the sales CSV for the selected range
                 await self.send_csv_report(period_label)
-
-                # Clear state so we exit the CSV flow
                 context.user_data.clear()
                 return
 
-        # 3) Handle /sales manual entry flow.
         if "sales_step" in context.user_data:
             step = context.user_data["sales_step"]
 
@@ -382,42 +365,30 @@ class TelegramBotHandler:
             elif step == "end_date":
                 context.user_data["end_date"] = update.message.text
                 start_date = context.user_data["start_date"]
-                end_date   = context.user_data["end_date"]
+                end_date = context.user_data["end_date"]
                 period_label = f"{start_date} to {end_date}"
-
-                # Generate/send the sales report for that range
                 await self.sales(period_label)
-
-                # Clear state so we exit the sales flow
                 context.user_data.clear()
                 return
 
-        # 4) Fallback if no manual entry is in progress.
+        # Fallback if no manual entry is in progress.
         await self._retry(
             #update.message.reply_text,
             #f"You said: {update.message.text}"
         )
 
-
     async def sales(self, period: str):
+        log_event(f"sales called with period: {period}")
         all_chat_ids = load_chat_ids()
         if not all_chat_ids:
             print("[sales] No chat IDs found. Nobody to send the sales report to.")
             return
 
-        # 1) Let utils.py do the heavy lifting
         report_text, line_chart_path, pie_chart_path = generate_sales_report(period)
-
-        # 2) Send the results to each chat
         for cid in all_chat_ids:
-            # Send the text
             await self._send_message_with_retries(cid, report_text)
-
-            # Send line chart if generated
             if line_chart_path and os.path.isfile(line_chart_path):
                 await self._send_photo_with_retries(cid, line_chart_path, caption="Sales Over Time")
-
-            # Send pie chart if generated
             if pie_chart_path and os.path.isfile(pie_chart_path):
                 await self._send_photo_with_retries(cid, pie_chart_path, caption="Best Selling Lockers")
 
@@ -425,20 +396,23 @@ class TelegramBotHandler:
         """
         Helper function to retry a Telegram API call in case of TimedOut.
         """
+        log_event("_retry called")
         for attempt in range(retries):
             try:
                 return await func(*args, **kwargs)
             except TimedOut as e:
+                log_event(f"_retry TimedOut on attempt {attempt+1}: {e}")
                 print(f"Attempt {attempt + 1} failed (TimedOut): {e}")
                 if attempt < retries - 1:
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    await asyncio.sleep(2 ** attempt)
                 else:
                     raise
             except BadRequest as e:
-                # If it's a chat not found, we'll just print and stop trying
+                log_event(f"_retry BadRequest: {e}")
                 print(f"BadRequest: {e}")
                 return
             except Exception as e:
+                log_event(f"_retry Exception on attempt {attempt+1}: {e}")
                 print(f"Attempt {attempt + 1} failed (Other Error): {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(2 ** attempt)
@@ -450,25 +424,31 @@ class TelegramBotHandler:
         Send a message to a specific chat ID with retry logic.
         The first retry is faster to improve success rate.
         """
+        log_event(f"_send_message_with_retries called for chat_id={chat_id}")
         for attempt in range(retries):
             try:
                 await self.app.bot.send_message(chat_id=chat_id, text=text)
                 print(f"[TelegramBotHandler] Message sent to {chat_id}")
+                log_event(f"Message sent to {chat_id}")
                 return
             except TimedOut as e:
+                log_event(f"_send_message_with_retries TimedOut on attempt {attempt+1} for chat_id={chat_id}: {e}")
                 print(f"Attempt {attempt + 1} failed (TimedOut) to send to {chat_id}: {e}")
                 if attempt < retries - 1:
                     if attempt == 0:
-                        await asyncio.sleep(0.5)  # fast retry
+                        await asyncio.sleep(0.5)
                     else:
                         await asyncio.sleep(2 ** attempt)
                 else:
                     print(f"[TelegramBotHandler] Failed to send message to {chat_id} after {retries} attempts.")
+                    log_event(f"Failed to send message to {chat_id} after {retries} attempts.")
                     return
             except BadRequest as e:
+                log_event(f"_send_message_with_retries BadRequest for chat_id={chat_id}: {e}")
                 print(f"[TelegramBotHandler] BadRequest to {chat_id}: {e}")
                 return
             except Exception as e:
+                log_event(f"_send_message_with_retries Exception on attempt {attempt+1} for chat_id={chat_id}: {e}")
                 print(f"[TelegramBotHandler] Attempt {attempt + 1} failed to send to {chat_id}: {e}")
                 if attempt < retries - 1:
                     if attempt == 0:
@@ -477,34 +457,40 @@ class TelegramBotHandler:
                         await asyncio.sleep(2 ** attempt)
                 else:
                     print(f"[TelegramBotHandler] Failed to send message to {chat_id} after {retries} attempts.")
+                    log_event(f"Failed to send message to {chat_id} after {retries} attempts.")
                     return
-                
 
     async def _send_photo_with_retries(self, chat_id, image_path, caption="", retries=5):
         """
         Send a photo to a specific chat ID with retry logic.
         The first retry is faster to improve success rate.
         """
+        log_event(f"_send_photo_with_retries called for chat_id={chat_id}, image_path={image_path}")
         for attempt in range(retries):
             try:
                 with open(image_path, "rb") as f:
                     await self.app.bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
                 print(f"[TelegramBotHandler] Photo sent to {chat_id}")
+                log_event(f"Photo sent to {chat_id}")
                 return
             except TimedOut as e:
+                log_event(f"_send_photo_with_retries TimedOut on attempt {attempt+1} for chat_id={chat_id}: {e}")
                 print(f"Attempt {attempt + 1} failed (TimedOut) to send photo to {chat_id}: {e}")
                 if attempt < retries - 1:
                     if attempt == 0:
-                        await asyncio.sleep(0.5)  # fast retry
+                        await asyncio.sleep(0.5)
                     else:
                         await asyncio.sleep(2 ** attempt)
                 else:
                     print(f"[TelegramBotHandler] Failed to send photo to {chat_id} after {retries} attempts.")
+                    log_event(f"Failed to send photo to {chat_id} after {retries} attempts.")
                     return
             except BadRequest as e:
+                log_event(f"_send_photo_with_retries BadRequest for chat_id={chat_id}: {e}")
                 print(f"[TelegramBotHandler] BadRequest (photo) to {chat_id}: {e}")
                 return
             except Exception as e:
+                log_event(f"_send_photo_with_retries Exception on attempt {attempt+1} for chat_id={chat_id}: {e}")
                 print(f"[TelegramBotHandler] Attempt {attempt + 1} failed (Other Error) to send photo to {chat_id}: {e}")
                 if attempt < retries - 1:
                     if attempt == 0:
@@ -513,48 +499,49 @@ class TelegramBotHandler:
                         await asyncio.sleep(2 ** attempt)
                 else:
                     print(f"[TelegramBotHandler] Failed to send photo to {chat_id} after {retries} attempts.")
+                    log_event(f"Failed to send photo to {chat_id} after {retries} attempts.")
                     return
-                
 
     async def send_csv_report(self, period: str):
         """
         Generate a CSV for the specified period and broadcast it to all known chat IDs.
         """
+        log_event(f"send_csv_report called for period={period}")
         all_chat_ids = load_chat_ids()
         if not all_chat_ids:
             print("[send_csv_report] No chat IDs found. Nobody to send CSV to.")
+            log_event("No chat IDs found in send_csv_report")
             return
 
         from utils import generate_csv_file
         csv_path = generate_csv_file(period)
-
-        # Debug printing:
         print(f"[send_csv_report] generate_csv_file returned: {csv_path}")
+        log_event(f"generate_csv_file returned: {csv_path}")
 
         if not csv_path:
-            # Means parse failure or no rows
             msg_text = f"No CSV data found for period: {period}"
             for cid in all_chat_ids:
                 await self._send_message_with_retries(cid, msg_text)
             return
 
-        # We have a CSV file -> broadcast it
         for cid in all_chat_ids:
             await self._send_document_with_retries(cid, csv_path, caption=f"CSV Data for {period}")
-
 
     async def send_climate_csv_report(self, period: str):
         """
         Generate a climate CSV for the specified period and broadcast to all known chat IDs.
         """
+        log_event(f"send_climate_csv_report called for period={period}")
         all_chat_ids = load_chat_ids()
         if not all_chat_ids:
             print("[send_climate_csv_report] No chat IDs found. Nobody to send climate CSV to.")
+            log_event("No chat IDs found in send_climate_csv_report")
             return
 
         from utils import generate_climate_csv_file
         csv_path = generate_climate_csv_file(period)
         print(f"[send_climate_csv_report] generate_climate_csv_file returned: {csv_path}")
+        log_event(f"generate_climate_csv_file returned: {csv_path}")
 
         if not csv_path:
             msg_text = f"No climate CSV data found for period: {period}"
@@ -565,37 +552,40 @@ class TelegramBotHandler:
         for cid in all_chat_ids:
             await self._send_document_with_retries(cid, csv_path, caption=f"Climate CSV Data for {period}")
 
-
-
     async def _send_document_with_retries(self, chat_id, file_path, caption="", retries=5):
         """
         Send a document (e.g. CSV file) to a specific chat ID with retry logic.
         """
+        log_event(f"_send_document_with_retries called for chat_id={chat_id}, file_path={file_path}")
         for attempt in range(retries):
             try:
                 with open(file_path, "rb") as doc:
                     await self.app.bot.send_document(chat_id=chat_id, document=doc, caption=caption)
                 print(f"[TelegramBotHandler] Document sent to {chat_id}")
+                log_event(f"Document sent to {chat_id}")
                 return
             except TimedOut as e:
+                log_event(f"_send_document_with_retries TimedOut on attempt {attempt+1} for chat_id={chat_id}: {e}")
                 print(f"Attempt {attempt + 1} failed (TimedOut) sending document to {chat_id}: {e}")
                 if attempt < retries - 1:
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    await asyncio.sleep(2 ** attempt)
                 else:
                     print(f"[TelegramBotHandler] Failed to send document after {retries} attempts.")
+                    log_event(f"Failed to send document after {retries} attempts.")
                     return
             except BadRequest as e:
+                log_event(f"_send_document_with_retries BadRequest for chat_id={chat_id}: {e}")
                 print(f"[TelegramBotHandler] BadRequest (document) to {chat_id}: {e}")
                 return
             except Exception as e:
+                log_event(f"_send_document_with_retries Exception on attempt {attempt+1} for chat_id={chat_id}: {e}")
                 print(f"[TelegramBotHandler] Attempt {attempt + 1} failed (Other Error) sending document: {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(2 ** attempt)
                 else:
                     print(f"[TelegramBotHandler] Failed to send document after {retries} attempts.")
+                    log_event(f"Failed to send document after {retries} attempts.")
                     return
-        
-
 
     async def run_bot(self):
         """
@@ -605,11 +595,11 @@ class TelegramBotHandler:
         4) Keep running until the process is stopped.
         5) Ensure a graceful shutdown on exit.
         """
+        log_event("run_bot called")
         try:
             await self.app.initialize()
             await self.app.start()
             await self.app.updater.start_polling()
-
 
             await self.app.bot.set_my_commands([
                 BotCommand("start", "Confirm the bot is online"),
@@ -619,32 +609,37 @@ class TelegramBotHandler:
                 BotCommand("climate", "Show climate readings"),
                 BotCommand("climate_csv", "Generate climate CSV files"),
                 BotCommand("help", "Show help commands"),
-            ])            
+            ])
 
-            # Start reading from the queue in a background task
             queue_task = asyncio.create_task(self.read_queue_loop())
-
-            # Keep running until the process is stopped
             await queue_task
 
         except Exception as e:
+            log_event(f"run_bot exception: {e}")
             print(f"[TelegramBotHandler] Caught exception: {e}")
 
         finally:
+            log_event("run_bot finally block - stopping updater")
             print("[TelegramBotHandler] Stopping updater...")
             try:
                 await self.app.updater.stop()
                 await self.app.stop()
                 print("[TelegramBotHandler] Bot shutdown complete.")
+                log_event("Bot shutdown complete")
             except TimedOut:
+                log_event("TimedOut during shutdown, suppressing error")
                 print("[TelegramBotHandler] Timed out during shutdown, suppressing error.")
 
     async def stop_bot(self):
-        """Custom stop method to suppress the 'get_updates' error during shutdown."""
+        """
+        Custom stop method to suppress the 'get_updates' error during shutdown.
+        """
+        log_event("stop_bot called")
         try:
             print("[TelegramBotHandler] Stopping bot gracefully...")
             await self.app.stop()
         except TimedOut:
+            log_event("TimedOut error suppressed during stop_bot")
             print("[TelegramBotHandler] Suppressing TimedOut error during shutdown.")
 
     async def read_queue_loop(self):
@@ -655,33 +650,30 @@ class TelegramBotHandler:
 
         Now also checks for 'image_path' to send an image instead of text.
         """
+        log_event("read_queue_loop started")
         while True:
             msg = await asyncio.to_thread(self.bot_queue.get)
+            log_event(f"read_queue_loop got message: {msg}")
 
-            # If the message is None, stop the bot
             if msg is None:
+                log_event("read_queue_loop received stop signal")
                 print("[TelegramBotHandler] Received stop signal from queue.")
                 break
 
-            chat_id = msg.get("chat_id")  # Could be None (broadcast) or a specific chat_id
-
-            # Check if this is an image message
+            chat_id = msg.get("chat_id")
             if "image_path" in msg:
                 image_path = msg["image_path"]
-                caption = msg.get("caption", "")  # optional
-                # Send the photo with retries
+                caption = msg.get("caption", "")
                 await self._send_photo_with_retries(chat_id, image_path, caption)
             else:
-                # Otherwise, assume it's a text message
                 text = msg.get("text", "No text found")
-                # If chat_id is None, broadcast to all saved IDs
                 if chat_id is None:
                     all_chat_ids = load_chat_ids()
                     if not all_chat_ids:
                         print("[TelegramBotHandler] No chat IDs found. Skipping broadcast.")
+                        log_event("No chat IDs to broadcast to")
                         continue
                     for cid in all_chat_ids:
                         await self._send_message_with_retries(cid, text)
                 else:
-                    # Send only to the specified chat_id
                     await self._send_message_with_retries(chat_id, text)
