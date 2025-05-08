@@ -66,7 +66,7 @@ class SPIHandler:
     _CHECK_EVERY_SEC = 5          # Watchdog poll interval
     _RESET_GPIO_PIN = 14          # NRST line of STM32 (active‑low)
     _INTERRUPT_PIN = 17           # STM32 → Pi interrupt pin
-    _BLACKBOX_PATH = "BLACK_BOX_STM32.txt"
+    _BLACKBOX_PATH = "logs/BLACK_BOX_STM32.txt"
 
     # ------------------- constructor ---------------------------
     def __init__(self, app, bot_queue, bus=0, device=0, speed_hz=1_600_000):
