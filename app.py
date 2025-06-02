@@ -4,7 +4,7 @@ from tkinter import messagebox, TclError
 import time
 import os
 from admin_frames import AdminOptionsFrame, PriceEntryFrame, InformationFrame, RGBEntryFrame, PaymentPopupFrame, PinEntryFrame, SetPinFrame, LightingModeFrame, VentilationFrame
-from utils import load_locker_data, save_locker_data, send_command, log_event
+from utils import load_locker_data, save_locker_data, send_command, log_event, opened_by_purchase, open_flag_lock
 from spi_handler import SPIHandler
 from scheduler import Scheduler
 from mdb_handler import MDBHandler
@@ -19,6 +19,8 @@ from gui import (
     GREEN_COLOR,
     TAG_COLOR
 )
+
+
 
 class VendingMachineApp(tk.Tk):
     def __init__(self, bot_queue):
@@ -153,6 +155,8 @@ class VendingMachineApp(tk.Tk):
 
 
 
+
+
     def select_locker(self, locker_id):
         button = self.buttons.get(locker_id)
         if not button or button['state'] == 'disabled':
@@ -232,6 +236,10 @@ class VendingMachineApp(tk.Tk):
 
             self.unlock_locker(locker_id)
             log_event(locker_id, price)
+
+            # Remember that this particular locker was opened by a purchase
+            with open_flag_lock:
+                opened_by_purchase.add(locker_id)
 
             # If pinned => revert to -1 => revert pay button image
             if locker_pin != -1:
@@ -319,6 +327,10 @@ class VendingMachineApp(tk.Tk):
 
                     self.unlock_locker(locker_id)
                     log_event(locker_id, price)
+                    
+                    # Remember that this particular locker was opened by a purchase
+                    with open_flag_lock:
+                        opened_by_purchase.add(locker_id)
 
                     # NEW: If pinned, revert pin => set pay button image
                     if locker_pin != -1:

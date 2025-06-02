@@ -16,12 +16,17 @@ import base64
 
 from admin_windows import InformationWindow
 from collections import defaultdict, Counter
-from admin_frames import InformationFrame
 
 from typing import Optional
 
+import threading
+
+opened_by_purchase = set()          # lockers just unlocked by a sale
+open_flag_lock     = threading.Lock()    # mutex that protects the set
+
 LOG_FOLDER = "logs"
 DB_FILE = "logs/vending_machine_logs.db"
+
 
 try:
     import serial
@@ -754,6 +759,13 @@ def interpret_and_notify(app, data, bot_queue):
         locker_id = byte1
         subject = '❗️"Problems with Locker"❗️'
         if byte2 == 50:
+            with open_flag_lock:
+                opened_due_to_sale = locker_id in opened_by_purchase
+                opened_by_purchase.discard(locker_id)     # keep the set clean
+
+            if not opened_due_to_sale:
+                # It was an admin/manual open – swallow the event
+                return
             body = f"Locker {locker_id}: Has been opened for 1 minute."
         elif byte2 == 100:
             body = f"Locker {locker_id}: Free space."
