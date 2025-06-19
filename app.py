@@ -237,9 +237,12 @@ class VendingMachineApp(tk.Tk):
             self.unlock_locker(locker_id)
             log_event(locker_id, price)
 
+
             # Remember that this particular locker was opened by a purchase
             with open_flag_lock:
                 opened_by_purchase.add(locker_id)
+            self.after(100_000, lambda lid=locker_id: self._expire_sale_flag(lid))
+
 
             # If pinned => revert to -1 => revert pay button image
             if locker_pin != -1:
@@ -331,6 +334,7 @@ class VendingMachineApp(tk.Tk):
                     # Remember that this particular locker was opened by a purchase
                     with open_flag_lock:
                         opened_by_purchase.add(locker_id)
+                    self.after(0, lambda lid=locker_id: self.after(100_000, lambda: self._expire_sale_flag(lid)))
 
                     # NEW: If pinned, revert pin => set pay button image
                     if locker_pin != -1:
@@ -363,7 +367,12 @@ class VendingMachineApp(tk.Tk):
         threading.Thread(target=payment_logic, daemon=True).start()
 
 
+    def _expire_sale_flag(self, locker_id: int) -> None:
+        with open_flag_lock:
+            opened_by_purchase.discard(locker_id)
 
+
+    
     def cancel_transaction(self):
         """Handle cancellation of the payment process."""
         print("cancel_transaction called")  # Debugging statement
