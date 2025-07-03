@@ -5,6 +5,7 @@ import os
 BG_COLOR = "#8bcbb9"
 GREEN_COLOR = "#1e6039"
 TAG_COLOR = "#b92387"
+FLASH_COLOR  = "#00008B" 
 
 def size(self):
     self.title("Vending Machine")
@@ -50,7 +51,7 @@ def create_locker_buttons(self):
 
 def create_pay_button(self, tk):
     self.pay_button = tk.Button(self, image=self.pay_image, command=self.process_payment, borderwidth=0, bg="#8bcbb9", activebackground="#8bcbb9", highlightthickness=0)
-    self.pay_button.place(x=195, y=985, width=1530, height=150)
+    self.pay_button.place(x=205, y=995, width=1550, height=170)
 
 def create_close_button(app):
     """Create a custom close button."""

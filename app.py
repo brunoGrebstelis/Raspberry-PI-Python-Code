@@ -17,7 +17,8 @@ from gui import (
 
     BG_COLOR,
     GREEN_COLOR,
-    TAG_COLOR
+    TAG_COLOR,
+    FLASH_COLOR
 )
 
 
@@ -146,6 +147,9 @@ class VendingMachineApp(tk.Tk):
         # Create PAY button
         create_pay_button(self, tk)
 
+        self.pay_default_bg = self.pay_button.cget("bg")   # <<< new
+        self._pay_flash_job = None                          # <<<
+
         # Create custom window control buttons
         #create_close_button(self)
 
@@ -179,12 +183,13 @@ class VendingMachineApp(tk.Tk):
 
         self.selected_locker = locker_id
         selected_pin = self.locker_data[str(locker_id)].get("locker_pin", -1)
+        self._flash_pay_button() 
         self.pay_button.config(image=self.reserved_image if selected_pin != -1 else self.pay_image)
 
         print(f"Locker {locker_id} has been selected.")
         
 
-    def process_payment(self):
+    def process_payment(self):  
         """Process payment when the PAY button is clicked."""
         locker_id = self.selected_locker
         # ================= NEW LOGIC START =================
@@ -270,58 +275,73 @@ class VendingMachineApp(tk.Tk):
         def payment_logic():
             """Background thread for payment process."""
             try:
-                # Verify the reader connection
+                # ─── 0.  Ensure MDB handler exists
                 if not self.mdb_handler:
                     raise ConnectionError("MDB Handler is not initialized.")
 
-                try:
-                    self.mdb_handler.write2Serial("D,STATUS")
-                    response = self.mdb_handler.readNWait()
-                    if not response or "RESET" in response:
-                        print("Card reader is resetting. Attempting reinitialization...")
-                        self.mdb_handler.initserial()
-                        self.mdb_handler.init_devices()
-                        print("Card reader reinitialized successfully.")
-                except Exception as reinit_error:
-                    print(f"Failed to reinitialize card reader: {reinit_error}")
-                    return  # Exit early if reinitialization fails
+                # ─── 1.  Quick reader-health check
+                self.mdb_handler.write2Serial("D,STATUS")
+                status_line = self.mdb_handler.readNWait()
+                if ("RESET" in status_line) or ("INIT" in status_line) or (not status_line):
+                    print("Reader is in RESET/INIT → re-initialising…")
+                    self.mdb_handler.initserial()
+                    self.mdb_handler.init_devices()
 
-                print(f"Requesting payment for Locker {locker_id} with Price {price}€...")
+                print(f"Requesting payment for Locker {locker_id}  Price {price:.2f}€")
 
-                # Attempt Direct Vend
-                direct_vend = self.mdb_handler.detect_direct_vend(str(price), str(product_code))
-                if direct_vend:
-                    print("Direct Vend detected. Waiting for transaction confirmation...")
+                # ─── 2.  Try Direct Vend first
+                direct_vend = self.mdb_handler.detect_direct_vend(f"{price:.2f}",
+                                                                  str(product_code))
+
+                if direct_vend:                                   # STATUS,VEND seen
+                    print("Direct Vend started → waiting for RESULT…")
                     for i in range(self.mdb_handler.VEND_TIMEOUT):
                         if self.payment_canceled:
-                            print("Payment process canceled.")
+                            print("Payment process canceled by UI.")
+                            self.mdb_handler.cancelTransaction()
                             return
 
                         res = self.mdb_handler.readNWait()
                         print(res)
-                        if "d,STATUS,RESULT,1" in res:  # Success confirmation
+
+                        if "d,STATUS,RESULT,1" in res:             # success
                             self.payment_success = True
-                            self.mdb_handler.endTransaction(str(price), str(product_code), res)
+                            self.mdb_handler.endTransaction(f"{price:.2f}",
+                                                            str(product_code), res)
                             break
-                        elif "d,STATUS,RESULT,-1" in res:  # Canceled by customer
-                            print("Payment canceled by the customer.")
+
+                        elif "d,STATUS,RESULT,-1" in res:          # customer cancelled
+                            print("Customer canceled on terminal.")
                             self.mdb_handler.cancelTransaction()
                             return
+
+                        elif ("d,STATUS,INIT" in res or            # reader rebooted
+                              "d,STATUS,RESET" in res):
+                            print("Reader rebooted mid-vend → abort & re-init")
+                            self.mdb_handler.cancelTransaction()
+                            self.mdb_handler.initserial()
+                            self.mdb_handler.init_devices()
+                            break                                   # fall back to normal vend
+
                         elif i == self.mdb_handler.VEND_TIMEOUT - 1:
                             self.mdb_handler.cancelTransaction()
                             raise TimeoutError("Transaction timed out.")
+
                         else:
                             time.sleep(1)
-                else:
-                    print("Direct Vend not supported. Proceeding with Normal Vend...")
-                    if self.mdb_handler.normal_vend(str(price), str(product_code)):
+
+                # ─── 3.  If DV not possible or aborted → Normal Vend
+                if not self.payment_success:
+                    print("Direct Vend not possible. Switching to Normal Vend…")
+                    if self.mdb_handler.normal_vend(f"{price:.2f}", str(product_code)):
                         self.payment_success = True
                     else:
-                        raise ValueError("Normal Vend failed or insufficient funds.")
+                        raise ValueError("Normal Vend failed (no credit or timeout).")
 
+                # ─── 4.  Success-path bookkeeping (unchanged)
                 if self.payment_success:
-                    print("Payment successful. Updating locker status...")
-                    self.locker_data[str(locker_id)]["status"] = False  # Set locker as unavailable
+                    print("Payment successful. Updating locker status…")
+                    self.locker_data[str(locker_id)]["status"] = False
                     save_locker_data(self.locker_data)
 
                     self.buttons[locker_id].config(state="disabled")
@@ -330,26 +350,24 @@ class VendingMachineApp(tk.Tk):
 
                     self.unlock_locker(locker_id)
                     log_event(locker_id, price)
-                    
-                    # Remember that this particular locker was opened by a purchase
+
                     with open_flag_lock:
                         opened_by_purchase.add(locker_id)
-                    self.after(0, lambda lid=locker_id: self.after(100_000, lambda: self._expire_sale_flag(lid)))
+                    self.after(0, lambda lid=locker_id:
+                               self.after(100_000, lambda: self._expire_sale_flag(lid)))
 
-                    # NEW: If pinned, revert pin => set pay button image
-                    if locker_pin != -1:
+                    if locker_pin != -1:                            # clear reservation
                         self.locker_data[str(locker_id)]["locker_pin"] = -1
                         save_locker_data(self.locker_data)
                         self.pay_button.config(image=self.pay_image)
 
-                    message = {
+                    self.bot_queue.put({
                         "chat_id": None,
-                        "text": f"Locker {locker_id} purchased for {price}€!"
-                    }
-                    self.bot_queue.put(message)
+                        "text": f"Locker {locker_id} purchased for {price:.2f}€!"
+                    })
                     self.after(0, self.payment_popup_frame.hide)
                 else:
-                    raise ValueError("Payment verification failed. Locker will not be unlocked.")
+                    raise ValueError("Payment verification failed — locker not opened.")
 
             except (ConnectionError, TimeoutError, ValueError) as e:
                 print(f"Payment Error: {e}")
@@ -358,12 +376,11 @@ class VendingMachineApp(tk.Tk):
                 print(f"Unexpected Error: {e}")
 
             finally:
-                # Ensure the popup is closed if not already
                 self.pay_button.configure(state="normal")
                 self.after(0, self.payment_popup_frame.hide)
                 print("Payment process finished.")
 
-        # Step 2: Run the payment logic in a background thread
+        # Run the payment logic in a background thread
         threading.Thread(target=payment_logic, daemon=True).start()
 
 
@@ -657,6 +674,23 @@ class VendingMachineApp(tk.Tk):
         if self.spi_handler:
             self.spi_handler.send_command(0x04, [mode, 0xFF, 0xFF, 0xFF, 0xFF])
 
+
+    def _flash_pay_button(self) -> None:
+        """Paint PAY dark-blue for 370 ms, cancelling any earlier flash."""
+        if self._pay_flash_job:
+            self.after_cancel(self._pay_flash_job)
+
+        self.pay_button.configure(bg=FLASH_COLOR,
+                                activebackground=FLASH_COLOR)
+
+        # Queue the restoration exactly 370 ms later
+        self._pay_flash_job = self.after(370, self._restore_pay_button_bg)
+
+    def _restore_pay_button_bg(self) -> None:
+        """Restore PAY button to its normal colour."""
+        self.pay_button.configure(bg=self.pay_default_bg,
+                                activebackground=self.pay_default_bg)
+        self._pay_flash_job = None
 
 
     def keyboard_listener(self, event):
