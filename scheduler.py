@@ -4,7 +4,12 @@ import os
 from threading import Thread
 from datetime import datetime, timedelta
 from utils import generate_sales_report
-# from utils import generate_sales_report  # Make sure this is available
+import subprocess
+import socket
+
+# Reuse the same connection names as the bot
+WIFI_CONN_NAME = "WLAN - ZNGQXU"
+ETH_CONN_NAME  = "wired connection 1"   # "" if you never want Ethernet fallback
 
 class Scheduler:
     def __init__(self, bot_queue):
@@ -16,144 +21,169 @@ class Scheduler:
         Daily checks for:
           1) 10:00 => If day == 1 => generate last month's report
           2) 00:00 => If it's Jan 1 => send Happy New Year & last year's report
+          3) Every 10 minutes => connectivity self-heal
         """
         schedule.every().day.at("10:00").do(self._monthly_report)
         schedule.every().day.at("00:00").do(self._yearly_report)
+        schedule.every(10).minutes.do(self._periodic_connectivity_check)  # NEW
+
+    # ------------------------ Connectivity self-heal (robust, sync) ------------------------
+
+    def _run_cmd(self, cmd):
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True)
+            # Optional debugging:
+            # if p.returncode != 0:
+            #     print(f"[Scheduler] CMD fail: {' '.join(map(str, cmd))} -> {p.returncode} | {p.stderr.strip()}")
+            return p.returncode
+        except Exception:
+            return 1
+
+    def _dns_ok(self) -> bool:
+        try:
+            socket.getaddrinfo("one.one.one.one", 443, proto=socket.IPPROTO_TCP)
+            return True
+        except Exception:
+            return False
+
+    def _default_iface(self) -> str | None:
+        try:
+            p = subprocess.run(["ip", "route", "get", "1.1.1.1"], capture_output=True, text=True)
+            if p.returncode == 0:
+                parts = p.stdout.strip().split()
+                if "dev" in parts:
+                    idx = parts.index("dev") + 1
+                    if idx < len(parts):
+                        return parts[idx]
+        except Exception:
+            pass
+        return None
+
+    def _ensure_network(self) -> bool:
+        if self._dns_ok():
+            return True
+
+        ping_ok = (self._run_cmd(["ping", "-c", "1", "-W", "2", "1.1.1.1"]) == 0)
+
+        # Bring links up
+        if ETH_CONN_NAME:
+            self._run_cmd(["nmcli", "device", "connect", "eth0"])
+            self._run_cmd(["nmcli", "con", "up", ETH_CONN_NAME])
+
+        self._run_cmd(["nmcli", "radio", "wifi", "on"])
+        self._run_cmd(["nmcli", "device", "connect", "wlan0"])
+        self._run_cmd(["nmcli", "con", "up", WIFI_CONN_NAME])
+
+        # If link OK but DNS broken -> set DNS on active iface and both common ifaces, flush, set profile DNS
+        if ping_ok and not self._dns_ok():
+            active = self._default_iface()
+            if active in ("wlan0", "eth0"):
+                self._run_cmd(["resolvectl", "dns", active, "1.1.1.1", "8.8.8.8"])
+            self._run_cmd(["resolvectl", "dns", "wlan0", "1.1.1.1", "8.8.8.8"])
+            self._run_cmd(["resolvectl", "dns", "eth0", "1.1.1.1", "8.8.8.8"])
+            self._run_cmd(["resolvectl", "flush-caches"])
+
+            if ETH_CONN_NAME:
+                self._run_cmd(["nmcli", "con", "mod", ETH_CONN_NAME, "ipv4.ignore-auto-dns", "yes"])
+                self._run_cmd(["nmcli", "con", "mod", ETH_CONN_NAME, "ipv4.dns", "1.1.1.1 8.8.8.8"])
+            self._run_cmd(["nmcli", "con", "mod", WIFI_CONN_NAME, "ipv4.ignore-auto-dns", "yes"])
+            self._run_cmd(["nmcli", "con", "mod", WIFI_CONN_NAME, "ipv4.dns", "1.1.1.1 8.8.8.8"])
+
+        time.sleep(2)
+        return self._dns_ok()
+
+    def _periodic_connectivity_check(self):
+        # Best effort heal; never throws
+        self._ensure_network()
+        return None
+
+    # -----------------------------------------------------------------------------------------
 
     def _monthly_report(self):
-        """
-        Generates and sends a report for the PREVIOUS month if today is the 1st.
-        """
         now = datetime.now()
-        # If it’s the 1st day of the month => generate last month’s report
         if now.day == 1:
-            # Calculate date range for the previous month
             start_date, end_date = self._get_previous_month_range()
             period_label = f"{start_date} to {end_date}"
-
             report_text, line_chart_path, pie_chart_path = generate_sales_report(period_label)
 
-            # 1) Enqueue the text report
-            text_msg = {
-                "chat_id": None,  # broadcast to all
+            self.bot_queue.put({
+                "chat_id": None,
                 "text": report_text,
-            }
-            self.bot_queue.put(text_msg)
+            })
 
-            # 2) Enqueue line chart if it exists
             if line_chart_path and os.path.isfile(line_chart_path):
-                line_chart_msg = {
+                self.bot_queue.put({
                     "chat_id": None,
                     "image_path": line_chart_path,
                     "caption": "Sales Over Time (Previous Month)",
-                }
-                self.bot_queue.put(line_chart_msg)
+                })
 
-            # 3) Enqueue pie chart if it exists
             if pie_chart_path and os.path.isfile(pie_chart_path):
-                pie_chart_msg = {
+                self.bot_queue.put({
                     "chat_id": None,
                     "image_path": pie_chart_path,
                     "caption": "Best Selling Lockers (Previous Month)",
-                }
-                self.bot_queue.put(pie_chart_msg)
+                })
 
     def _yearly_report(self):
-        """
-        Generates and sends a report for the PREVIOUS year if today is Jan 1.
-        Also sends a "Happy New Year!" message.
-        """
         now = datetime.now()
-        # If it’s January 1 => generate last year's report
         if now.day == 1 and now.month == 1:
-            # First, enqueue a Happy New Year message
-            new_year_msg = {
+            self.bot_queue.put({
                 "chat_id": None,
                 "text": "Happy New Year! 🎉🥂",
-            }
-            self.bot_queue.put(new_year_msg)
+            })
 
-            # Calculate date range for the previous year
             start_date, end_date = self._get_previous_year_range()
             period_label = f"{start_date} to {end_date}"
-
             report_text, line_chart_path, pie_chart_path = generate_sales_report(period_label)
 
-            # 1) Enqueue the text report
-            text_msg = {
+            self.bot_queue.put({
                 "chat_id": None,
                 "text": report_text,
-            }
-            self.bot_queue.put(text_msg)
+            })
 
-            # 2) Enqueue line chart if it exists
             if line_chart_path and os.path.isfile(line_chart_path):
-                line_chart_msg = {
+                self.bot_queue.put({
                     "chat_id": None,
                     "image_path": line_chart_path,
                     "caption": "Sales Over Time (Previous Year)",
-                }
-                self.bot_queue.put(line_chart_msg)
+                })
 
-            # 3) Enqueue pie chart if it exists
             if pie_chart_path and os.path.isfile(pie_chart_path):
-                pie_chart_msg = {
+                self.bot_queue.put({
                     "chat_id": None,
                     "image_path": pie_chart_path,
                     "caption": "Best Selling Lockers (Previous Year)",
-                }
-                self.bot_queue.put(pie_chart_msg)
+                })
 
     def _get_previous_month_range(self):
-        """
-        Returns (start_date, end_date) for the previous month,
-        formatted as 'YYYY-MM-DD'.
-        """
         today = datetime.today()
-        # The first day of the current month
         first_of_current_month = today.replace(day=1)
-        # Last day of the previous month is one day before the first of this month
         last_day_prev_month = first_of_current_month - timedelta(days=1)
-        # First day of the previous month
         first_day_prev_month = last_day_prev_month.replace(day=1)
-
-        start_date = first_day_prev_month.strftime("%Y-%m-%d")
-        end_date = last_day_prev_month.strftime("%Y-%m-%d")
-        return (start_date, end_date)
+        return (first_day_prev_month.strftime("%Y-%m-%d"),
+                last_day_prev_month.strftime("%Y-%m-%d"))
 
     def _get_previous_year_range(self):
-        """
-        Returns (start_date, end_date) for the previous year,
-        formatted as 'YYYY-MM-DD'.
-        """
         today = datetime.today()
-        # "Last year"
         last_year = today.year - 1
-        start_of_last_year = datetime(last_year, 1, 1)
-        end_of_last_year = datetime(last_year, 12, 31)
-
-        start_date = start_of_last_year.strftime("%Y-%m-%d")
-        end_date = end_of_last_year.strftime("%Y-%m-%d")
-        return (start_date, end_date)
+        return (datetime(last_year, 1, 1).strftime("%Y-%m-%d"),
+                datetime(last_year, 12, 31).strftime("%Y-%m-%d"))
 
     def start(self):
-        """
-        Starts the scheduler in a separate thread.
-        """
         self.running = True
         self.schedule_tasks()
+        # heal once at startup so we don't wait 10 minutes
+        try:
+            self._periodic_connectivity_check()
+        except Exception:
+            pass
         Thread(target=self.run, daemon=True).start()
 
     def run(self):
-        """
-        Continuously run scheduled tasks.
-        """
         while self.running:
             schedule.run_pending()
             time.sleep(1)
 
     def stop(self):
-        """
-        Stop the scheduler.
-        """
         self.running = False

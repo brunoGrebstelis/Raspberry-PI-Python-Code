@@ -124,7 +124,8 @@ class MDBHandler:
         while time.time() < deadline:
             rsp = self.readNWait()
             if "d,STATUS,CREDIT," in rsp:
-                credit = float(rsp.split(",")[-1])
+                #credit = float(rsp.split(",")[-1])
+                credit = float(rsp.strip().split(",")[3])
                 if credit >= float(amount):
                     rsp = self.writeNReadLn(f"D,REQ,{amount},{product}")
                     if "d,STATUS,VEND" in rsp:
